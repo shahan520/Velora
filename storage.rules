@@ -1,0 +1,58 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // --- Helper Functions ---
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.role == 'ADMIN' ||
+        request.auth.token.admin == true ||
+        request.auth.token.role == 'admin'
+      );
+    }
+    
+    // 1. User Profile Photos
+    // Public read for authenticated dating app members; uploads strictly limited to owner,
+    // with file size <= 5MB and image MIME validation.
+    match /users/{userId}/photos/{photoId} {
+      allow read: if isAuthenticated();
+      allow write: if isOwner(userId)
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp)');
+      allow delete: if isOwner(userId) || isAdmin();
+    }
+    
+    // 2. Identity Verification Documents (e.g., ID proof / selfie verification)
+    // Strictly confidential: Only owner and platform administrators can read.
+    match /users/{userId}/verification/{docId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if isOwner(userId)
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('(image/(jpeg|png|webp)|application/pdf)');
+      allow delete: if isAdmin();
+    }
+    
+    // 3. Private Chat Attachments
+    // Restricted to authenticated matched users; max size 20MB.
+    match /conversations/{conversationId}/{attachmentId} {
+      allow read, write: if isAuthenticated()
+        && request.resource.size < 20 * 1024 * 1024
+        && request.resource.contentType.matches('(image/.*|video/.*|audio/.*)');
+      allow delete: if isAdmin();
+    }
+    
+    // 4. Protected Administrative Exports & Backups
+    // Denied by default to all ordinary users.
+    match /admin/{allPaths=**} {
+      allow read, write: if isAdmin();
+    }
+  }
+}

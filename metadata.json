@@ -1,0 +1,6 @@
+{
+  "name": "Velora",
+  "description": "Real People. Real Connections. Premium dating platform with discovery, matching, real-time chat, safety controls, and admin management.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
