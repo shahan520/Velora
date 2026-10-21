@@ -19,14 +19,12 @@ service firebase.storage {
       );
     }
     
-    // 1. User Profile Photos
-    // Public read for authenticated dating app members; uploads strictly limited to owner,
-    // with file size <= 5MB and image MIME validation.
+    // 1. User Profile Photos (MIGRATED TO CLOUDINARY CDN)
+    // Profile photos are uploaded directly via Cloudinary CDN service, with URLs stored in Cloud Firestore.
+    // Firebase Storage photo uploads are replaced by Cloudinary for performance and on-the-fly transformations.
     match /users/{userId}/photos/{photoId} {
       allow read: if isAuthenticated();
-      allow write: if isOwner(userId)
-        && request.resource.size < 5 * 1024 * 1024
-        && request.resource.contentType.matches('image/(jpeg|png|webp)');
+      allow write: if false; // Deprecated: Replaced by Cloudinary CDN image upload
       allow delete: if isOwner(userId) || isAdmin();
     }
     

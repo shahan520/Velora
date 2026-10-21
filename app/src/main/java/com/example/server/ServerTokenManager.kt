@@ -18,9 +18,11 @@ object ServerTokenManager {
     fun createToken(userId: String, email: String, role: Role, durationMillis: Long = 24 * 3600 * 1000L): String {
         val now = System.currentTimeMillis()
         val expiresAt = now + durationMillis
+        val isAdmin = role == Role.ADMIN
 
         val headerJson = """{"alg":"HS256","typ":"JWT"}"""
-        val payloadJson = """{"sub":"$userId","email":"$email","role":"${role.name}","iat":$now,"exp":$expiresAt}"""
+        // Injects Firebase Auth custom claims: "role" and "admin" (boolean)
+        val payloadJson = """{"sub":"$userId","email":"$email","role":"${role.name}","admin":$isAdmin,"iat":$now,"exp":$expiresAt}"""
 
         val encodedHeader = base64UrlEncode(headerJson.toByteArray(StandardCharsets.UTF_8))
         val encodedPayload = base64UrlEncode(payloadJson.toByteArray(StandardCharsets.UTF_8))
@@ -58,6 +60,7 @@ object ServerTokenManager {
             ?: throw SecurityException("Missing email claim in token")
         val roleStr = extractJsonValue(payloadString, "role")
             ?: throw SecurityException("Missing role claim in token")
+        val adminStr = extractJsonValue(payloadString, "admin")
         val iatStr = extractJsonValue(payloadString, "iat") ?: "0"
         val expStr = extractJsonValue(payloadString, "exp") ?: "0"
 
@@ -73,12 +76,18 @@ object ServerTokenManager {
             Role.USER
         }
 
+        val adminClaim = adminStr?.equals("true", ignoreCase = true) ?: (role == Role.ADMIN)
+
+        // Strict Custom Claim Integrity: An admin claim must match Role.ADMIN
+        val effectiveIsAdmin = (role == Role.ADMIN) && adminClaim
+
         return AuthTokenPayload(
             userId = sub,
             email = email,
             role = role,
             issuedAtMillis = iatStr.toLongOrNull() ?: now,
-            expiresAtMillis = expiresAt
+            expiresAtMillis = expiresAt,
+            admin = effectiveIsAdmin
         )
     }
 

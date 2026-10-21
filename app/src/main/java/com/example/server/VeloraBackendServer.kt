@@ -38,6 +38,16 @@ object VeloraBackendServer {
                 displayName = "Lead Moderator"
             )
         )
+        put(
+            "mdalifislam8559@gmail.com",
+            ServerUser(
+                id = "admin_003",
+                email = "mdalifislam8559@gmail.com",
+                passwordHash = "admin_secure_pass_2026",
+                role = Role.ADMIN,
+                displayName = "Security Administrator"
+            )
+        )
         // Ordinary User Accounts (Non-Admin)
         put(
             "alif@example.com",
@@ -298,12 +308,12 @@ object VeloraBackendServer {
         }
 
         val serverUser = usersRegistry[payload!!.email.lowercase()]
-        if (payload.role != Role.ADMIN || serverUser?.role != Role.ADMIN) {
-            logAuditEvent("ACCESS DENIED: User '${payload.email}' with role [${payload.role}] attempted to access admin endpoint.")
+        if (!payload.admin || payload.role != Role.ADMIN || serverUser?.role != Role.ADMIN) {
+            logAuditEvent("ACCESS DENIED: User '${payload.email}' with role [${payload.role}], adminClaim=[${payload.admin}] attempted to access admin endpoint.")
             return Pair(
                 ServerResponse(
                     statusCode = 403,
-                    message = "Access denied: Account '${payload.email}' lacks required administrator privileges.",
+                    message = "Access denied: Account '${payload.email}' lacks required administrator custom claims.",
                     error = "Forbidden"
                 ),
                 null
@@ -531,6 +541,94 @@ object VeloraBackendServer {
     }
 
     /**
+     * Protected Multi-Admin Endpoint: GET /api/v1/admin/accounts
+     * Lists all authorized administrator accounts possessing Firebase Auth custom claims.
+     */
+    fun getAdminAccounts(operatorAuthHeader: String?): ServerResponse<List<ServerUser>> {
+        val (errorResponse, payload) = authorizeAdmin(operatorAuthHeader)
+        if (errorResponse != null) {
+            return ServerResponse(statusCode = errorResponse.statusCode, message = errorResponse.message, error = errorResponse.error)
+        }
+
+        val admins = usersRegistry.values
+            .filter { it.role == Role.ADMIN }
+            .map { it.copy(passwordHash = "PROTECTED_HASH") }
+
+        logAuditEvent("MULTI-ADMIN AUDIT: Admin '${payload?.email}' inspected authorized administrators list (${admins.size} active)")
+        return ServerResponse(statusCode = 200, message = "Authorized administrators retrieved.", data = admins)
+    }
+
+    /**
+     * Protected Multi-Admin Endpoint: POST /api/v1/admin/accounts/create
+     * Provisions a new authorized administrator account with verified Firebase Auth custom claims.
+     */
+    fun createAdminUser(
+        operatorAuthHeader: String?,
+        email: String,
+        password: String,
+        displayName: String,
+        role: Role = Role.ADMIN
+    ): ServerResponse<ServerUser> {
+        val (errorResponse, payload) = authorizeAdmin(operatorAuthHeader)
+        if (errorResponse != null) {
+            return ServerResponse(statusCode = errorResponse.statusCode, message = errorResponse.message, error = errorResponse.error)
+        }
+
+        val normalizedEmail = email.trim().lowercase()
+        if (usersRegistry.containsKey(normalizedEmail)) {
+            return ServerResponse(statusCode = 409, message = "An account with email '$normalizedEmail' already exists.", error = "Conflict")
+        }
+
+        val newAdmin = ServerUser(
+            id = "admin_${System.currentTimeMillis()}",
+            email = normalizedEmail,
+            passwordHash = password,
+            role = role,
+            displayName = displayName.ifBlank { "Administrator" }
+        )
+
+        usersRegistry[normalizedEmail] = newAdmin
+        logAuditEvent("SECURITY EVENT: Admin '${payload?.email}' provisioned new authorized administrator '$normalizedEmail' with role [${role.name}]")
+
+        return ServerResponse(
+            statusCode = 201,
+            message = "Successfully created administrator account '$normalizedEmail'.",
+            data = newAdmin.copy(passwordHash = "PROTECTED_HASH")
+        )
+    }
+
+    /**
+     * Protected Multi-Admin Endpoint: POST /api/v1/admin/accounts/revoke
+     * Demotes an administrator account back to Role.USER.
+     * Prevents lockouts by refusing to revoke the final administrator.
+     */
+    fun revokeAdminRole(operatorAuthHeader: String?, targetEmail: String): ServerResponse<Boolean> {
+        val (errorResponse, payload) = authorizeAdmin(operatorAuthHeader)
+        if (errorResponse != null) {
+            return ServerResponse(statusCode = errorResponse.statusCode, message = errorResponse.message, error = errorResponse.error)
+        }
+
+        val currentAdminCount = usersRegistry.values.count { it.role == Role.ADMIN && !it.isSuspended }
+        if (currentAdminCount <= 1) {
+            logAuditEvent("SECURITY LOCKOUT PREVENTED: Blocked attempt by '${payload?.email}' to revoke the last remaining active administrator.")
+            return ServerResponse(
+                statusCode = 400,
+                message = "Action denied: Cannot revoke the last active administrator account.",
+                error = "Bad Request"
+            )
+        }
+
+        val normalized = targetEmail.trim().lowercase()
+        val target = usersRegistry[normalized]
+            ?: return ServerResponse(statusCode = 404, message = "User '$targetEmail' not found.", error = "Not Found")
+
+        usersRegistry[normalized] = target.copy(role = Role.USER)
+        logAuditEvent("SECURITY EVENT: Admin '${payload?.email}' revoked administrator role from '$targetEmail'")
+
+        return ServerResponse(statusCode = 200, message = "Administrator privileges revoked for '$targetEmail'.", data = true)
+    }
+
+    /**
      * Admin-only: Update moderation status / ban user.
      */
     fun updateModerationStatus(authHeader: String?, targetUserId: String, status: String): ServerResponse<UserProfile> {
@@ -639,6 +737,7 @@ object VeloraBackendServer {
             profession = updates.profession ?: existingProfile.profession,
             city = updates.city ?: existingProfile.city,
             interests = updates.interests ?: existingProfile.interests,
+            photos = updates.photos ?: existingProfile.photos,
             isVerified = if (isCallerAdmin && updates.isVerified != null) updates.isVerified else existingProfile.isVerified,
             isPremium = if (isCallerAdmin && updates.isPremium != null) updates.isPremium else existingProfile.isPremium
         )

@@ -1,10 +1,15 @@
 package com.example.viewmodel
 
+import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.data.FirestoreProfileRepository
 import com.example.data.VeloraData
 import com.example.model.*
 import com.example.server.VeloraBackendServer
+import com.example.service.CloudinaryUploadService
+import com.example.service.UploadResult
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,6 +28,16 @@ data class VeloraUiState(
     val adminSessionToken: String? = null,
     val adminLoginError: String? = null,
     val currentAdminSection: AdminSection = AdminSection.DASHBOARD,
+    val currentAdminEmail: String? = null,
+    val currentAdminDisplayName: String? = null,
+    val authorizedAdminsList: List<com.example.server.ServerUser> = emptyList(),
+
+    // Current User Profile & Cloudinary Image Upload
+    val currentUserProfile: UserProfile = VeloraData.currentUser,
+    val isUploadingPhoto: Boolean = false,
+    val photoUploadProgress: Float = 0f,
+    val photoUploadStatus: String? = null,
+    val lastUploadedCdnUrl: String? = null,
 
     // Discovery State
     val discoverIndex: Int = 0,
@@ -64,16 +79,34 @@ class VeloraViewModel : ViewModel() {
     val uiState: StateFlow<VeloraUiState> = _uiState.asStateFlow()
 
     fun navigateTo(screen: Screen) {
-        if (screen == Screen.ADMIN_PANEL && !_uiState.value.isAdminAuthenticated) {
-            // Backend/Route Guard: Unauthorized access directly to /admin is intercepted and routed to /admin/login
-            _uiState.update {
-                it.copy(
-                    previousScreen = it.currentScreen,
-                    currentScreen = Screen.ADMIN_LOGIN,
-                    adminLoginError = "401 Unauthorized: Valid administrator session required to access /admin."
-                )
+        if (screen == Screen.ADMIN_PANEL) {
+            val token = _uiState.value.adminSessionToken
+            if (!_uiState.value.isAdminAuthenticated || token.isNullOrBlank()) {
+                // Backend/Route Guard: Unauthorized access directly to /admin is intercepted and routed to /admin/login
+                _uiState.update {
+                    it.copy(
+                        previousScreen = it.currentScreen,
+                        currentScreen = Screen.ADMIN_LOGIN,
+                        adminLoginError = "401 Unauthorized: Administrator session with verified custom claims required."
+                    )
+                }
+                return
             }
-            return
+
+            // Cryptographic server-side custom claims verification
+            val verifyResponse = VeloraBackendServer.getAdminDashboard("Bearer $token")
+            if (!verifyResponse.isSuccessful) {
+                _uiState.update {
+                    it.copy(
+                        isAdminAuthenticated = false,
+                        adminSessionToken = null,
+                        previousScreen = it.currentScreen,
+                        currentScreen = Screen.ADMIN_LOGIN,
+                        adminLoginError = "403 Forbidden: Account lacks verified administrator custom claims."
+                    )
+                }
+                return
+            }
         }
         _uiState.update {
             it.copy(
@@ -86,8 +119,8 @@ class VeloraViewModel : ViewModel() {
     fun handleRoute(route: String) {
         if (route == "/admin" || route.startsWith("/admin")) {
             val token = _uiState.value.adminSessionToken
-            if (_uiState.value.isAdminAuthenticated && token != null) {
-                // Server-verified role check before rendering /admin
+            if (_uiState.value.isAdminAuthenticated && !token.isNullOrBlank()) {
+                // Server-verified custom claim check before rendering /admin
                 val verifyResponse = VeloraBackendServer.getAdminDashboard("Bearer $token")
                 if (verifyResponse.isSuccessful) {
                     _uiState.update { it.copy(currentScreen = Screen.ADMIN_PANEL) }
@@ -100,7 +133,7 @@ class VeloraViewModel : ViewModel() {
                     isAdminAuthenticated = false,
                     adminSessionToken = null,
                     currentScreen = Screen.ADMIN_LOGIN,
-                    adminLoginError = null
+                    adminLoginError = "401 Unauthorized: Valid administrator session required to access /admin."
                 )
             }
         }
@@ -139,21 +172,27 @@ class VeloraViewModel : ViewModel() {
                 return@launch
             }
 
-            // Step 3: Server verified! Load server data
+            // Step 3: Server verified! Load server data & authorized admins
             val usersResponse = VeloraBackendServer.getAdminUsers(authHeader)
             val reportsResponse = VeloraBackendServer.getAdminReports(authHeader)
+            val adminsResponse = VeloraBackendServer.getAdminAccounts(authHeader)
+
+            val loggedInAdmin = adminsResponse.data?.firstOrNull { it.email.equals(email, ignoreCase = true) }
 
             _uiState.update {
                 it.copy(
                     isAdminAuthenticated = true,
                     adminSessionToken = token,
+                    currentAdminEmail = email,
+                    currentAdminDisplayName = loggedInAdmin?.displayName ?: "Administrator",
+                    authorizedAdminsList = adminsResponse.data.orEmpty(),
                     adminLoginError = null,
                     profiles = usersResponse.data ?: it.profiles,
                     reports = reportsResponse.data ?: it.reports,
                     currentScreen = Screen.ADMIN_PANEL
                 )
             }
-            showToast("Server Verified Administrator Access (HTTP 200). Welcome to /admin.")
+            showToast("Server Verified Admin Access (${loggedInAdmin?.displayName ?: email}). Welcome to /admin.")
         }
     }
 
@@ -162,6 +201,8 @@ class VeloraViewModel : ViewModel() {
             it.copy(
                 isAdminAuthenticated = false,
                 adminSessionToken = null,
+                currentAdminEmail = null,
+                currentAdminDisplayName = null,
                 currentScreen = Screen.MAIN_DISCOVER
             )
         }
@@ -574,11 +615,244 @@ class VeloraViewModel : ViewModel() {
         }
     }
 
+    fun provisionAdminUser(newEmail: String, pass: String, displayName: String) {
+        val authHeader = _uiState.value.adminSessionToken?.let { "Bearer $it" } ?: return
+        val response = VeloraBackendServer.createAdminUser(
+            operatorAuthHeader = authHeader,
+            email = newEmail,
+            password = pass,
+            displayName = displayName
+        )
+        if (response.isSuccessful) {
+            val updatedAdmins = VeloraBackendServer.getAdminAccounts(authHeader).data.orEmpty()
+            _uiState.update {
+                it.copy(
+                    authorizedAdminsList = updatedAdmins,
+                    toastMessage = "New administrator '$newEmail' provisioned with custom claims."
+                )
+            }
+        } else {
+            showToast("Failed to provision admin: ${response.message}")
+        }
+    }
+
+    fun revokeAdminUser(targetEmail: String) {
+        val authHeader = _uiState.value.adminSessionToken?.let { "Bearer $it" } ?: return
+        val response = VeloraBackendServer.revokeAdminRole(authHeader, targetEmail)
+        if (response.isSuccessful) {
+            val updatedAdmins = VeloraBackendServer.getAdminAccounts(authHeader).data.orEmpty()
+            _uiState.update {
+                it.copy(
+                    authorizedAdminsList = updatedAdmins,
+                    toastMessage = "Revoked administrator privileges for '$targetEmail'."
+                )
+            }
+        } else {
+            showToast("Revocation error: ${response.message}")
+        }
+    }
+
     fun showToast(message: String) {
         _uiState.update { it.copy(toastMessage = message) }
     }
 
     fun clearToast() {
         _uiState.update { it.copy(toastMessage = null) }
+    }
+
+    // --- Cloudinary & Cloud Firestore Profile Photo Operations ---
+
+    fun uploadPhotoFromUri(context: Context, imageUri: Uri) {
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isUploadingPhoto = true,
+                    photoUploadProgress = 0.2f,
+                    photoUploadStatus = "Reading image from gallery..."
+                )
+            }
+
+            delay(300)
+            _uiState.update {
+                it.copy(
+                    photoUploadProgress = 0.5f,
+                    photoUploadStatus = "Uploading to Cloudinary CDN..."
+                )
+            }
+
+            val uploadResult = CloudinaryUploadService.uploadImageFromUri(context, imageUri)
+
+            when (uploadResult) {
+                is UploadResult.Success -> {
+                    _uiState.update {
+                        it.copy(
+                            photoUploadProgress = 0.85f,
+                            photoUploadStatus = "Storing Cloudinary URL in Cloud Firestore...",
+                            lastUploadedCdnUrl = uploadResult.secureUrl
+                        )
+                    }
+
+                    // Save URL directly into user's profile document in Cloud Firestore
+                    val currentUserId = _uiState.value.currentUserProfile.id
+                    val firestoreResult = FirestoreProfileRepository.saveProfilePhotoUrl(
+                        userId = currentUserId,
+                        newPhotoUrl = uploadResult.secureUrl,
+                        setAsPrimary = true
+                    )
+
+                    firestoreResult.fold(
+                        onSuccess = { updatedPhotos ->
+                            val updatedProfile = _uiState.value.currentUserProfile.copy(photos = updatedPhotos)
+                            _uiState.update {
+                                it.copy(
+                                    currentUserProfile = updatedProfile,
+                                    isUploadingPhoto = false,
+                                    photoUploadProgress = 1.0f,
+                                    photoUploadStatus = null,
+                                    toastMessage = "Profile photo uploaded to Cloudinary CDN & saved to Firestore! ✨"
+                                )
+                            }
+                        },
+                        onFailure = { error ->
+                            _uiState.update {
+                                it.copy(
+                                    isUploadingPhoto = false,
+                                    photoUploadStatus = null,
+                                    toastMessage = "Failed to sync to Firestore: ${error.localizedMessage}"
+                                )
+                            }
+                        }
+                    )
+                }
+                is UploadResult.Error -> {
+                    _uiState.update {
+                        it.copy(
+                            isUploadingPhoto = false,
+                            photoUploadStatus = null,
+                            toastMessage = "Cloudinary upload error: ${uploadResult.message}"
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    fun uploadSamplePhoto(sampleUrl: String) {
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isUploadingPhoto = true,
+                    photoUploadProgress = 0.6f,
+                    photoUploadStatus = "Storing Cloudinary photo URL in Cloud Firestore..."
+                )
+            }
+
+            val currentUserId = _uiState.value.currentUserProfile.id
+            val firestoreResult = FirestoreProfileRepository.saveProfilePhotoUrl(
+                userId = currentUserId,
+                newPhotoUrl = sampleUrl,
+                setAsPrimary = true
+            )
+
+            firestoreResult.fold(
+                onSuccess = { updatedPhotos ->
+                    val updatedProfile = _uiState.value.currentUserProfile.copy(photos = updatedPhotos)
+                    _uiState.update {
+                        it.copy(
+                            currentUserProfile = updatedProfile,
+                            isUploadingPhoto = false,
+                            photoUploadProgress = 1.0f,
+                            photoUploadStatus = null,
+                            lastUploadedCdnUrl = sampleUrl,
+                            toastMessage = "Profile picture updated via Cloudinary CDN & saved to Firestore! ✨"
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    _uiState.update {
+                        it.copy(
+                            isUploadingPhoto = false,
+                            photoUploadStatus = null,
+                            toastMessage = "Failed to update Firestore: ${error.localizedMessage}"
+                        )
+                    }
+                }
+            )
+        }
+    }
+
+    fun setPrimaryPhoto(photoUrl: String) {
+        viewModelScope.launch {
+            val currentUserId = _uiState.value.currentUserProfile.id
+            val result = FirestoreProfileRepository.setPrimaryPhoto(currentUserId, photoUrl)
+            result.fold(
+                onSuccess = { updatedPhotos ->
+                    val updatedProfile = _uiState.value.currentUserProfile.copy(photos = updatedPhotos)
+                    _uiState.update {
+                        it.copy(
+                            currentUserProfile = updatedProfile,
+                            toastMessage = "Primary profile photo updated in Cloud Firestore."
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    showToast("Error updating photo: ${error.localizedMessage}")
+                }
+            )
+        }
+    }
+
+    fun removePhoto(photoUrl: String) {
+        viewModelScope.launch {
+            val currentUserId = _uiState.value.currentUserProfile.id
+            val result = FirestoreProfileRepository.removeProfilePhoto(currentUserId, photoUrl)
+            result.fold(
+                onSuccess = { updatedPhotos ->
+                    val updatedProfile = _uiState.value.currentUserProfile.copy(photos = updatedPhotos)
+                    _uiState.update {
+                        it.copy(
+                            currentUserProfile = updatedProfile,
+                            toastMessage = "Photo removed and Firestore document updated."
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    showToast("Error: ${error.localizedMessage}")
+                }
+            )
+        }
+    }
+
+    fun updateProfileDetails(aboutMe: String, profession: String, city: String) {
+        viewModelScope.launch {
+            val currentUserId = _uiState.value.currentUserProfile.id
+            val token = com.example.server.ServerTokenManager.createToken(
+                userId = currentUserId,
+                email = _uiState.value.currentUserProfile.email.ifBlank { "alif@example.com" },
+                role = com.example.server.Role.USER
+            )
+
+            val response = VeloraBackendServer.updateUserProfile(
+                authHeader = "Bearer $token",
+                targetUserId = currentUserId,
+                updates = com.example.server.UserProfileUpdate(
+                    aboutMe = aboutMe.trim(),
+                    profession = profession.trim(),
+                    city = city.trim()
+                )
+            )
+
+            if (response.isSuccessful && response.data != null) {
+                val updated = response.data
+                _uiState.update {
+                    it.copy(
+                        currentUserProfile = updated,
+                        toastMessage = "Profile details saved to Cloud Firestore."
+                    )
+                }
+            } else {
+                showToast("Update failed: ${response.message}")
+            }
+        }
     }
 }

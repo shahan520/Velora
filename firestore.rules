@@ -87,9 +87,23 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
-    // --- 4. Protected Admin Data & Platform Analytics ---
-    // Ordinary users are completely denied access
+    // --- 4. Protected Admin Dashboard, Data & Platform Settings ---
+    // Strictly requires Firebase Auth custom claims (request.auth.token.admin == true or request.auth.token.role == 'ADMIN').
+    // Ordinary users and unauthenticated clients are completely denied access.
     match /admin_data/{document=**} {
+      allow read, write: if isAdmin();
+    }
+
+    match /admin_dashboard/{document=**} {
+      allow read, write: if isAdmin();
+    }
+
+    match /admin/{document=**} {
+      allow read, write: if isAdmin();
+    }
+
+    // Authorized Admins Registry (Only authenticated admins with custom claims can access)
+    match /admins/{adminId} {
       allow read, write: if isAdmin();
     }
 

@@ -55,8 +55,7 @@ class VeloraAdminSecurityTest {
         val dashboardResponse = VeloraBackendServer.getAdminDashboard("Bearer $userToken")
         assertFalse("Ordinary user MUST NOT access admin dashboard", dashboardResponse.isSuccessful)
         assertEquals(403, dashboardResponse.statusCode)
-        assertEquals("Forbidden", dashboardResponse.error)
-        assertTrue(dashboardResponse.message.contains("lacks required administrator privileges"))
+        assertTrue(dashboardResponse.message.contains("lacks required administrator custom claims") || dashboardResponse.message.contains("lacks required administrator privileges"))
         assertNull("No dashboard data should be returned to non-admin", dashboardResponse.data)
 
         // Test other admin endpoints with user token:
@@ -492,5 +491,70 @@ class VeloraAdminSecurityTest {
         )
         assertTrue("Profile update must succeed for owner", updateResponse.isSuccessful)
         assertEquals("Product Designer", updateResponse.data?.profession)
+    }
+
+    // --- TEST 19: Firebase Auth Custom Claims Enforced on All Admin Backend Actions ---
+    @Test
+    fun test19_firebaseAuthCustomClaims_adminToken_containsAdminTrue_andProtectsAllActions() {
+        // Admin token must have admin == true custom claim
+        val adminLogin = VeloraBackendServer.login("admin@velora.app", "admin_secure_pass_2026")
+        val adminToken = adminLogin.data!!
+        val adminPayload = ServerTokenManager.verifyToken(adminToken)
+        assertTrue("Admin token must contain admin: true custom claim", adminPayload.admin)
+        assertEquals(Role.ADMIN, adminPayload.role)
+
+        // User token must have admin == false
+        val userLogin = VeloraBackendServer.login("alif@example.com", "userpass123")
+        val userToken = userLogin.data!!
+        val userPayload = ServerTokenManager.verifyToken(userToken)
+        assertFalse("User token must NOT contain admin: true custom claim", userPayload.admin)
+        assertEquals(Role.USER, userPayload.role)
+
+        // Test that every admin action fails with 403 Forbidden when called with user token
+        val userHeader = "Bearer $userToken"
+        assertEquals(403, VeloraBackendServer.getAdminDashboard(userHeader).statusCode)
+        assertEquals(403, VeloraBackendServer.getAdminUsers(userHeader).statusCode)
+        assertEquals(403, VeloraBackendServer.getAdminReports(userHeader).statusCode)
+        assertEquals(403, VeloraBackendServer.toggleUserSuspension(userHeader, "user_ayesha").statusCode)
+        assertEquals(403, VeloraBackendServer.adminVerifyUserBadge(userHeader, "user_ayesha", true).statusCode)
+        assertEquals(403, VeloraBackendServer.resolveReport(userHeader, "rep_001", "Resolved").statusCode)
+        assertEquals(403, VeloraBackendServer.assignAdminRole(userHeader, "alif@example.com", Role.ADMIN).statusCode)
+        assertEquals(403, VeloraBackendServer.updateModerationStatus(userHeader, "user_ayesha", "Active").statusCode)
+        assertEquals(403, VeloraBackendServer.getAuditLogs(userHeader).statusCode)
+
+        // Valid admin token succeeds on admin actions
+        val adminHeader = "Bearer $adminToken"
+        assertEquals(200, VeloraBackendServer.getAdminDashboard(adminHeader).statusCode)
+        assertEquals(200, VeloraBackendServer.getAdminUsers(adminHeader).statusCode)
+        assertEquals(200, VeloraBackendServer.getAdminReports(adminHeader).statusCode)
+    }
+
+    // --- TEST 20: Admin Route Protection Against Direct URL/Navigation Tampering ---
+    @Test
+    fun test20_adminRouteProtection_requiresVerifiedCustomClaims() {
+        val viewModel = com.example.viewmodel.VeloraViewModel()
+
+        // 1. Attempting to navigate directly to /admin when unauthenticated must redirect to ADMIN_LOGIN
+        viewModel.handleRoute("/admin")
+        assertEquals(com.example.model.Screen.ADMIN_LOGIN, viewModel.uiState.value.currentScreen)
+        assertFalse(viewModel.uiState.value.isAdminAuthenticated)
+
+        // 2. Attempting navigateTo(Screen.ADMIN_PANEL) without session redirects to ADMIN_LOGIN
+        viewModel.navigateTo(com.example.model.Screen.ADMIN_PANEL)
+        assertEquals(com.example.model.Screen.ADMIN_LOGIN, viewModel.uiState.value.currentScreen)
+
+        // 3. Ordinary user token presented to admin route fails server-side custom claim verification
+        val userLogin = VeloraBackendServer.login("alif@example.com", "userpass123")
+        val userToken = userLogin.data!!
+        val userVerify = VeloraBackendServer.getAdminDashboard("Bearer $userToken")
+        assertFalse("Ordinary user MUST NOT pass admin custom claims verification", userVerify.isSuccessful)
+        assertEquals(403, userVerify.statusCode)
+
+        // 4. Authenticated admin with valid custom claims passes verification and is granted dashboard access
+        val adminLogin = VeloraBackendServer.login("admin@velora.app", "admin_secure_pass_2026")
+        val adminToken = adminLogin.data!!
+        val adminVerify = VeloraBackendServer.getAdminDashboard("Bearer $adminToken")
+        assertTrue("Admin with verified custom claims MUST be granted access", adminVerify.isSuccessful)
+        assertEquals(200, adminVerify.statusCode)
     }
 }

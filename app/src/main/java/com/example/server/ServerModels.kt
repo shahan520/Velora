@@ -35,7 +35,8 @@ data class AuthTokenPayload(
     val email: String,
     val role: Role,
     val issuedAtMillis: Long,
-    val expiresAtMillis: Long
+    val expiresAtMillis: Long,
+    val admin: Boolean = (role == Role.ADMIN)
 )
 
 data class AdminDashboardData(
@@ -71,6 +72,7 @@ data class UserProfileUpdate(
     val profession: String? = null,
     val city: String? = null,
     val interests: List<String>? = null,
+    val photos: List<String>? = null,
     // Privileged fields (attempted update must be blocked for ordinary users)
     val role: Role? = null,
     val isVerified: Boolean? = null,

@@ -5,7 +5,7 @@ import com.example.model.*
 object VeloraData {
 
     // Current Logged-in User Profile
-    val currentUser = UserProfile(
+    var currentUser = UserProfile(
         id = "user_me",
         name = "Alif Islam",
         age = 24,

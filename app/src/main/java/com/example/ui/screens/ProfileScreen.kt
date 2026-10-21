@@ -68,20 +68,37 @@ fun ProfileScreen(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Box {
+                Box(
+                    modifier = Modifier
+                        .clickable(onClick = onEditProfile)
+                        .testTag("profile_avatar_box")
+                ) {
                     AsyncImage(
                         model = user.photos.firstOrNull(),
                         contentDescription = user.name,
                         modifier = Modifier
-                            .size(76.dp)
+                            .size(78.dp)
                             .clip(CircleShape)
                             .border(2.5.dp, VeloraPink, CircleShape),
                         contentScale = ContentScale.Crop
                     )
-                    VerifiedBadge(
-                        size = 20.dp,
-                        modifier = Modifier.align(Alignment.BottomEnd)
-                    )
+                    // Camera edit icon indicator
+                    Box(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .align(Alignment.BottomEnd)
+                            .clip(CircleShape)
+                            .background(VeloraPink)
+                            .border(1.5.dp, MaterialTheme.colorScheme.surface, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Default.CameraAlt,
+                            contentDescription = "Change photo",
+                            tint = Color.White,
+                            modifier = Modifier.size(13.dp)
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.width(16.dp))

@@ -176,8 +176,9 @@ fun VeloraAppRoot(viewModel: VeloraViewModel) {
 
                 Screen.MAIN_PROFILE -> {
                     ProfileScreen(
+                        user = uiState.currentUserProfile,
                         isPremium = uiState.isPremiumUser,
-                        onEditProfile = { viewModel.showToast("Profile editing saved!") },
+                        onEditProfile = { viewModel.navigateTo(Screen.EDIT_PROFILE) },
                         onPremiumClick = { viewModel.navigateTo(Screen.PREMIUM_STORE) },
                         onBoostClick = { viewModel.navigateTo(Screen.BOOST_STORE) },
                         onNotificationsClick = { viewModel.navigateTo(Screen.NOTIFICATIONS) },
@@ -186,6 +187,25 @@ fun VeloraAppRoot(viewModel: VeloraViewModel) {
                             if (target != null) viewModel.openBlockReport(target)
                         },
                         onLogout = { viewModel.navigateTo(Screen.SPLASH) }
+                    )
+                }
+
+                Screen.EDIT_PROFILE -> {
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    EditProfileScreen(
+                        user = uiState.currentUserProfile,
+                        isUploading = uiState.isUploadingPhoto,
+                        uploadProgress = uiState.photoUploadProgress,
+                        uploadStatus = uiState.photoUploadStatus,
+                        lastUploadedUrl = uiState.lastUploadedCdnUrl,
+                        onUploadPhotoUri = { uri -> viewModel.uploadPhotoFromUri(context, uri) },
+                        onUploadSamplePhoto = { sampleUrl -> viewModel.uploadSamplePhoto(sampleUrl) },
+                        onSetPrimaryPhoto = { url -> viewModel.setPrimaryPhoto(url) },
+                        onRemovePhoto = { url -> viewModel.removePhoto(url) },
+                        onSaveProfile = { aboutMe, profession, city ->
+                            viewModel.updateProfileDetails(aboutMe, profession, city)
+                        },
+                        onBack = { viewModel.navigateBack() }
                     )
                 }
 
