@@ -1,5 +1,6 @@
 package com.example
 
+import com.example.server.MfsMerchantConfig
 import com.example.server.PaymentVerificationRequest
 import com.example.server.Role
 import com.example.server.ServerTokenManager
@@ -557,4 +558,286 @@ class VeloraAdminSecurityTest {
         assertTrue("Admin with verified custom claims MUST be granted access", adminVerify.isSuccessful)
         assertEquals(200, adminVerify.statusCode)
     }
+
+    // --- TEST 21: User Registration Defaults to Unverified Phone and Email ---
+    @Test
+    fun test21_newUserRegistration_defaultsToUnverifiedEmailAndPhone() {
+        val testEmail = "testuser_${System.currentTimeMillis()}@example.com"
+        val testPhone = "+880 1711-${(100000..999999).random()}"
+        val regResponse = VeloraBackendServer.registerNewUser(
+            name = "Test New User",
+            email = testEmail,
+            phone = testPhone,
+            password = "testpassword123"
+        )
+
+        assertTrue("Registration must succeed with HTTP 201", regResponse.isSuccessful)
+        assertEquals(201, regResponse.statusCode)
+        val registeredUser = regResponse.data
+        assertNotNull(registeredUser)
+        assertFalse("New user must NOT have email verified initially", registeredUser!!.isEmailVerified)
+        assertFalse("New user must NOT have phone verified initially", registeredUser.isPhoneVerified)
+
+        // Duplicate registration must be rejected with HTTP 409
+        val dupResponse = VeloraBackendServer.registerNewUser(
+            name = "Duplicate",
+            email = testEmail,
+            phone = testPhone,
+            password = "testpassword123"
+        )
+        assertEquals(409, dupResponse.statusCode)
+    }
+
+    // --- TEST 22: Unverified User Login Blocked with HTTP 403 Forbidden ---
+    @Test
+    fun test22_unverifiedUserLogin_blockedWith403Forbidden() {
+        val testEmail = "unverified_${System.currentTimeMillis()}@example.com"
+        val testPhone = "+880 1722-${(100000..999999).random()}"
+        VeloraBackendServer.registerNewUser(
+            name = "Unverified User",
+            email = testEmail,
+            phone = testPhone,
+            password = "securePassword123"
+        )
+
+        val loginResponse = VeloraBackendServer.login(testEmail, "securePassword123")
+        assertFalse("Unverified user login MUST be rejected", loginResponse.isSuccessful)
+        assertEquals(403, loginResponse.statusCode)
+        assertTrue(
+            "Must state phone or email verification is required",
+            loginResponse.message.contains("verification required", ignoreCase = true)
+        )
+    }
+
+    // --- TEST 23: Phone OTP Verification Rejects Invalid Code and Accepts Valid Code ---
+    @Test
+    fun test23_phoneOtpVerification_rejectsWrongCodeAndAcceptsValidCode() {
+        val testPhone = "+880 1733-${(100000..999999).random()}"
+        val otpResponse = VeloraBackendServer.sendPhoneOtp(testPhone)
+        assertTrue(otpResponse.isSuccessful)
+        val realOtp = otpResponse.data!!
+        assertEquals(6, realOtp.length)
+
+        // 1. Wrong OTP is rejected
+        val wrongVerify = VeloraBackendServer.verifyPhoneOtp(testPhone, "000000")
+        assertFalse("Incorrect OTP must be rejected", wrongVerify.isSuccessful)
+        assertEquals(400, wrongVerify.statusCode)
+
+        // 2. Real OTP is accepted
+        val successVerify = VeloraBackendServer.verifyPhoneOtp(testPhone, realOtp)
+        assertTrue("Valid OTP must succeed", successVerify.isSuccessful)
+        assertEquals(200, successVerify.statusCode)
+        assertTrue(successVerify.data == true)
+
+        // 3. Reusing used/consumed OTP fails
+        val reusedVerify = VeloraBackendServer.verifyPhoneOtp(testPhone, realOtp)
+        assertFalse("Consumed OTP cannot be reused", reusedVerify.isSuccessful)
+        assertEquals(400, reusedVerify.statusCode)
+    }
+
+    // --- TEST 24: Email Verification Rejects Invalid Code and Accepts Valid Code ---
+    @Test
+    fun test24_emailVerification_rejectsWrongCodeAndAcceptsValidCode() {
+        val testEmail = "verify_${System.currentTimeMillis()}@example.com"
+        val sendResponse = VeloraBackendServer.sendEmailVerification(testEmail)
+        assertTrue(sendResponse.isSuccessful)
+        val realCode = sendResponse.data!!
+        assertEquals(6, realCode.length)
+
+        // 1. Wrong code rejected
+        val wrongVerify = VeloraBackendServer.verifyEmailCode(testEmail, "111111")
+        assertFalse("Incorrect email code must be rejected", wrongVerify.isSuccessful)
+        assertEquals(400, wrongVerify.statusCode)
+
+        // 2. Correct code accepted
+        val successVerify = VeloraBackendServer.verifyEmailCode(testEmail, realCode)
+        assertTrue("Correct email verification code must succeed", successVerify.isSuccessful)
+        assertEquals(200, successVerify.statusCode)
+        assertTrue(successVerify.data == true)
+
+        // 3. Consumed code cannot be reused
+        val reusedVerify = VeloraBackendServer.verifyEmailCode(testEmail, realCode)
+        assertFalse("Consumed email verification code cannot be reused", reusedVerify.isSuccessful)
+        assertEquals(400, reusedVerify.statusCode)
+    }
+
+    // --- TEST 25: Full Verification Flow Allows Login and Grants Access ---
+    @Test
+    fun test25_fullyVerifiedUser_loginSucceedsWith200AndToken() {
+        val testEmail = "completed_${System.currentTimeMillis()}@example.com"
+        val testPhone = "+880 1744-${(100000..999999).random()}"
+        val pass = "Password123!"
+
+        // 1. Register
+        VeloraBackendServer.registerNewUser("Completed User", testEmail, testPhone, pass)
+
+        // 2. Phone OTP verify
+        val phoneOtp = VeloraBackendServer.getPendingPhoneOtp(testPhone)
+        assertNotNull("Phone OTP must be generated upon registration", phoneOtp)
+        val phoneVerify = VeloraBackendServer.verifyPhoneOtp(testPhone, phoneOtp!!)
+        assertTrue(phoneVerify.isSuccessful)
+
+        // 3. Attempting login when phone is verified but email is still unverified must return 403
+        val partialLogin = VeloraBackendServer.login(testEmail, pass)
+        assertEquals(403, partialLogin.statusCode)
+        assertTrue(partialLogin.message.contains("Email verification required", ignoreCase = true))
+
+        // 4. Email verify
+        val emailCode = VeloraBackendServer.getPendingEmailCode(testEmail)
+        assertNotNull("Email code must be generated upon registration", emailCode)
+        val emailVerify = VeloraBackendServer.verifyEmailCode(testEmail, emailCode!!)
+        assertTrue(emailVerify.isSuccessful)
+
+        // 5. Now both phone and email are verified -> Login succeeds with HTTP 200
+        val finalLogin = VeloraBackendServer.login(testEmail, pass)
+        assertTrue("Login must succeed after completing phone OTP and email verification", finalLogin.isSuccessful)
+        assertEquals(200, finalLogin.statusCode)
+        assertNotNull("Valid JWT token must be issued", finalLogin.data)
+    }
+
+    // --- TEST 26: Bangladeshi MFS Payment Verification (bKash & Nagad) Automatically Activates Subscription ---
+    @Test
+    fun test26_mfsPaymentVerification_bKashAndNagad_automaticallyGrantsPremium() {
+        val userEmail = "mfs_user_${System.currentTimeMillis()}@example.com"
+        val userPhone = "+880 1711-223344"
+        VeloraBackendServer.registerNewUser("MFS User", userEmail, userPhone, "Pass123!")
+        val otp = VeloraBackendServer.getPendingPhoneOtp(userPhone)!!
+        VeloraBackendServer.verifyPhoneOtp(userPhone, otp)
+        val code = VeloraBackendServer.getPendingEmailCode(userEmail)!!
+        VeloraBackendServer.verifyEmailCode(userEmail, code)
+        val loginRes = VeloraBackendServer.login(userEmail, "Pass123!")
+        val token = loginRes.data!!
+
+        // 1. Submit valid bKash payment with TrxID in BDT
+        val bkashRequest = PaymentVerificationRequest(
+            planId = "plan_1m",
+            amount = "299",
+            currency = "BDT",
+            transactionReceipt = "BK9X${System.currentTimeMillis() % 100000}",
+            paymentMethod = "BKASH",
+            senderAccount = "01712-345678"
+        )
+        val bkashVerify = VeloraBackendServer.verifyPaymentAndGrantPremium("Bearer $token", bkashRequest)
+        assertTrue("Valid bKash transaction must verify successfully", bkashVerify.isSuccessful)
+        assertEquals(200, bkashVerify.statusCode)
+        assertTrue(bkashVerify.data == true)
+
+        // 2. Submit valid Nagad payment with TrxID in BDT
+        val nagadUserEmail = "nagad_user_${System.currentTimeMillis()}@example.com"
+        VeloraBackendServer.registerNewUser("Nagad User", nagadUserEmail, "+880 1811-998877", "Pass123!")
+        val nOtp = VeloraBackendServer.getPendingPhoneOtp("+880 1811-998877")!!
+        VeloraBackendServer.verifyPhoneOtp("+880 1811-998877", nOtp)
+        val nCode = VeloraBackendServer.getPendingEmailCode(nagadUserEmail)!!
+        VeloraBackendServer.verifyEmailCode(nagadUserEmail, nCode)
+        val nLogin = VeloraBackendServer.login(nagadUserEmail, "Pass123!")
+        val nToken = nLogin.data!!
+
+        val nagadRequest = PaymentVerificationRequest(
+            planId = "plan_3m",
+            amount = "699",
+            currency = "BDT",
+            transactionReceipt = "NG7Y${System.currentTimeMillis() % 100000}",
+            paymentMethod = "NAGAD",
+            senderAccount = "01811-998877"
+        )
+        val nagadVerify = VeloraBackendServer.verifyPaymentAndGrantPremium("Bearer $nToken", nagadRequest)
+        assertTrue("Valid Nagad transaction must verify successfully", nagadVerify.isSuccessful)
+        assertEquals(200, nagadVerify.statusCode)
+        assertTrue(nagadVerify.data == true)
+
+        // 3. Verify transactions logged in MFS transaction history for admin inspection
+        val adminLogin = VeloraBackendServer.login("admin@velora.app", "admin_secure_pass_2026")
+        val adminTxns = VeloraBackendServer.getMfsTransactions("Bearer ${adminLogin.data!!}").data!!
+        assertTrue(adminTxns.any { it.trxId == bkashRequest.transactionReceipt && it.method == "bKash" && it.amountBdt == 299 })
+        assertTrue(adminTxns.any { it.trxId == nagadRequest.transactionReceipt && it.method == "Nagad" && it.amountBdt == 699 })
+    }
+
+    // --- TEST 27: Admin Gateway Controls: Disabling MFS Gateway Enforces Server-Side Rejection ---
+    @Test
+    fun test27_disabledMfsGateway_rejectsPayment() {
+        val adminLogin = VeloraBackendServer.login("admin@velora.app", "admin_secure_pass_2026")
+        val adminToken = adminLogin.data!!
+
+        // Admin disables bKash gateway
+        val currentConfig = VeloraBackendServer.getMfsConfig().data!!
+        val updatedConfig = currentConfig.copy(bKashEnabled = false, nagadEnabled = true)
+        val updateRes = VeloraBackendServer.updateMfsConfig("Bearer $adminToken", updatedConfig)
+        assertTrue(updateRes.isSuccessful)
+        assertFalse("bKash must now be disabled", VeloraBackendServer.getMfsConfig().data!!.bKashEnabled)
+
+        // Ordinary user tries to pay via bKash
+        val userEmail = "disabled_test_${System.currentTimeMillis()}@example.com"
+        val phone = "+880 1511-${(100000..999999).random()}"
+        VeloraBackendServer.registerNewUser("Test User", userEmail, phone, "Pass123!")
+        val otp = VeloraBackendServer.getPendingPhoneOtp(phone)!!
+        VeloraBackendServer.verifyPhoneOtp(phone, otp)
+        val code = VeloraBackendServer.getPendingEmailCode(userEmail)!!
+        VeloraBackendServer.verifyEmailCode(userEmail, code)
+        val token = VeloraBackendServer.login(userEmail, "Pass123!").data!!
+
+        val req = PaymentVerificationRequest(
+            planId = "plan_1m",
+            amount = "299",
+            currency = "BDT",
+            transactionReceipt = "BKASH123456",
+            paymentMethod = "BKASH",
+            senderAccount = "01511-000000"
+        )
+        val payRes = VeloraBackendServer.verifyPaymentAndGrantPremium("Bearer $token", req)
+        assertFalse("Payment via disabled bKash must be rejected", payRes.isSuccessful)
+        assertEquals(400, payRes.statusCode)
+        assertEquals("MFS_METHOD_DISABLED", payRes.error)
+
+        // Restore bKash for subsequent tests
+        VeloraBackendServer.updateMfsConfig("Bearer $adminToken", currentConfig.copy(bKashEnabled = true))
+    }
+
+    // --- TEST 28: Admin Configures MFS Merchant Numbers & BDT Package Prices ---
+    @Test
+    fun test28_adminUpdatesMfsConfigAndPlanPricesInBdt_persisted() {
+        val adminLogin = VeloraBackendServer.login("admin@velora.app", "admin_secure_pass_2026")
+        val adminToken = adminLogin.data!!
+
+        val userLogin = VeloraBackendServer.login("alif@example.com", "userpass123")
+        val userToken = userLogin.data!!
+
+        // 1. Ordinary user cannot update MFS config (403 Forbidden)
+        val fakeConfig = MfsMerchantConfig(bKashMerchantNumber = "01999-999999")
+        val unauthorizedConfigUpdate = VeloraBackendServer.updateMfsConfig("Bearer $userToken", fakeConfig)
+        assertEquals(403, unauthorizedConfigUpdate.statusCode)
+
+        // 2. Ordinary user cannot update package prices (403 Forbidden)
+        val unauthorizedPriceUpdate = VeloraBackendServer.updateSubscriptionPlanPrice("Bearer $userToken", "plan_1m", 100)
+        assertEquals(403, unauthorizedPriceUpdate.statusCode)
+
+        // 3. Admin successfully updates bKash merchant number & Nagad merchant number
+        val newConfig = MfsMerchantConfig(
+            bKashEnabled = true,
+            bKashMerchantNumber = "01755-123456",
+            bKashMerchantType = "Merchant",
+            nagadEnabled = true,
+            nagadMerchantNumber = "01655-654321",
+            nagadMerchantType = "Personal",
+            currency = "BDT"
+        )
+        val configUpdateRes = VeloraBackendServer.updateMfsConfig("Bearer $adminToken", newConfig)
+        assertTrue(configUpdateRes.isSuccessful)
+        assertEquals("01755-123456", VeloraBackendServer.getMfsConfig().data!!.bKashMerchantNumber)
+        assertEquals("01655-654321", VeloraBackendServer.getMfsConfig().data!!.nagadMerchantNumber)
+
+        // 4. Admin successfully updates package price in BDT
+        val priceUpdateRes = VeloraBackendServer.updateSubscriptionPlanPrice("Bearer $adminToken", "plan_1m", 350)
+        assertTrue(priceUpdateRes.isSuccessful)
+        assertEquals(350, priceUpdateRes.data?.priceBdt)
+
+        val updatedPlans = VeloraBackendServer.getSubscriptionPlans().data!!
+        val plan1m = updatedPlans.find { it.id == "plan_1m" }
+        assertEquals(350, plan1m?.priceBdt)
+
+        // 5. Admin can retrieve transaction log
+        val txnsRes = VeloraBackendServer.getMfsTransactions("Bearer $adminToken")
+        assertTrue(txnsRes.isSuccessful)
+        assertNotNull(txnsRes.data)
+    }
 }
+

@@ -18,7 +18,10 @@ data class ServerUser(
     val isVerified: Boolean = false,
     val isPremium: Boolean = false,
     val paymentStatus: String = "none",
-    val moderationStatus: String = "ACTIVE"
+    val moderationStatus: String = "ACTIVE",
+    val isEmailVerified: Boolean = false,
+    val isPhoneVerified: Boolean = false,
+    val phone: String = ""
 )
 
 data class ServerResponse<T>(
@@ -86,5 +89,51 @@ data class PaymentVerificationRequest(
     val planId: String,
     val transactionReceipt: String,
     val amount: String,
-    val currency: String = "BDT"
+    val currency: String = "BDT",
+    val paymentMethod: String = "BKASH",
+    val senderAccount: String = ""
 )
+
+data class MfsMerchantConfig(
+    val bKashEnabled: Boolean = true,
+    val bKashMerchantNumber: String = "01711-987654",
+    val bKashMerchantType: String = "Merchant",
+    val nagadEnabled: Boolean = true,
+    val nagadMerchantNumber: String = "01812-345678",
+    val nagadMerchantType: String = "Merchant",
+    val currency: String = "BDT",
+    val merchantCounter: String = "1"
+)
+
+data class MfsPaymentTransaction(
+    val id: String,
+    val trxId: String,
+    val method: String,
+    val senderPhone: String,
+    val amountBdt: Int,
+    val currency: String = "BDT",
+    val planId: String,
+    val planName: String,
+    val userId: String,
+    val userEmail: String,
+    val timestampMillis: Long = System.currentTimeMillis(),
+    val status: String = "VERIFIED"
+)
+
+data class PendingPhoneOtp(
+    val phone: String,
+    val otp: String,
+    val createdAtMillis: Long,
+    val expiresAtMillis: Long,
+    val attempts: Int = 0
+)
+
+data class PendingEmailCode(
+    val email: String,
+    val code: String,
+    val createdAtMillis: Long,
+    val expiresAtMillis: Long,
+    val attempts: Int = 0
+)
+
+

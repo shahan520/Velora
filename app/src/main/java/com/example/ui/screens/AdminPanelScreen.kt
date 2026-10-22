@@ -32,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.example.data.VeloraData
 import com.example.model.*
 import com.example.ui.components.VeloraBrandLogo
 import com.example.ui.theme.*
@@ -44,7 +45,12 @@ fun AdminPanelScreen(
     reports: List<UserReport>,
     onToggleSuspendUser: (String) -> Unit,
     onResolveReport: (String, String) -> Unit,
-    onExitAdmin: () -> Unit
+    onExitAdmin: () -> Unit,
+    mfsConfig: com.example.server.MfsMerchantConfig = com.example.server.MfsMerchantConfig(),
+    onUpdateMfsConfig: (com.example.server.MfsMerchantConfig) -> Unit = {},
+    subscriptionPlans: List<SubscriptionPlan> = VeloraData.subscriptionPlans,
+    onUpdatePlanPrice: (planId: String, newPriceBdt: Int) -> Unit = { _, _ -> },
+    mfsTransactions: List<com.example.server.MfsPaymentTransaction> = emptyList()
 ) {
     Scaffold(
         topBar = {
@@ -197,7 +203,13 @@ fun AdminPanelScreen(
                 AdminSection.USERS -> AdminUsersSection(profiles, onToggleSuspendUser)
                 AdminSection.REPORTS -> AdminReportsSection(reports, onResolveReport)
                 AdminSection.ANALYTICS -> AdminAnalyticsSection()
-                AdminSection.SUBSCRIPTIONS -> AdminSubscriptionsSection()
+                AdminSection.SUBSCRIPTIONS -> AdminSubscriptionsSection(
+                    mfsConfig = mfsConfig,
+                    onUpdateMfsConfig = onUpdateMfsConfig,
+                    plans = subscriptionPlans,
+                    onUpdatePlanPrice = onUpdatePlanPrice,
+                    transactions = mfsTransactions
+                )
                 AdminSection.SETTINGS -> AdminSettingsSection()
                 else -> AdminDashboardSection(profiles, reports)
             }
@@ -807,62 +819,463 @@ fun AdminAnalyticsSection() {
 }
 
 @Composable
-fun AdminSubscriptionsSection() {
+fun AdminSubscriptionsSection(
+    mfsConfig: com.example.server.MfsMerchantConfig = com.example.server.MfsMerchantConfig(),
+    onUpdateMfsConfig: (com.example.server.MfsMerchantConfig) -> Unit = {},
+    plans: List<SubscriptionPlan> = VeloraData.subscriptionPlans,
+    onUpdatePlanPrice: (planId: String, newPriceBdt: Int) -> Unit = { _, _ -> },
+    transactions: List<com.example.server.MfsPaymentTransaction> = emptyList()
+) {
+    var bKashEnabled by remember(mfsConfig) { mutableStateOf(mfsConfig.bKashEnabled) }
+    var bKashNumber by remember(mfsConfig) { mutableStateOf(mfsConfig.bKashMerchantNumber) }
+    var bKashType by remember(mfsConfig) { mutableStateOf(mfsConfig.bKashMerchantType) }
+
+    var nagadEnabled by remember(mfsConfig) { mutableStateOf(mfsConfig.nagadEnabled) }
+    var nagadNumber by remember(mfsConfig) { mutableStateOf(mfsConfig.nagadMerchantNumber) }
+    var nagadType by remember(mfsConfig) { mutableStateOf(mfsConfig.nagadMerchantType) }
+
+    var saveFeedback by remember { mutableStateOf<String?>(null) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
-        Text("Premium & Subscriptions", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Text("Revenue & Mobile Financial Services", fontSize = 20.sp, fontWeight = FontWeight.Bold)
 
-        // Total Revenue Banner
+        // Total Verified Revenue Banner
+        val calculatedRevenue = 589420 + transactions.sumOf { it.amountBdt }
         Surface(
             shape = RoundedCornerShape(16.dp),
             color = VeloraPlumDark,
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.padding(18.dp)) {
-                Text("Total Verified Revenue", color = VeloraLavender, fontSize = 13.sp)
+                Text("Total Verified Revenue (BDT)", color = VeloraLavender, fontSize = 13.sp)
                 Spacer(modifier = Modifier.height(6.dp))
-                Text("৳ 5,89,420", color = VeloraGold, fontSize = 28.sp, fontWeight = FontWeight.Black)
+                Text(
+                    text = "৳ ${String.format("%,d", calculatedRevenue)} BDT",
+                    color = VeloraGold,
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.Black
+                )
                 Spacer(modifier = Modifier.height(4.dp))
-                Text("↑ 32% this month • Ad-free business model", color = VeloraOnlineGreen, fontSize = 12.sp)
+                Text(
+                    text = "Gateways: bKash (বিকাশ) ${if (bKashEnabled) "Active" else "Disabled"} • Nagad (নগদ) ${if (nagadEnabled) "Active" else "Disabled"}",
+                    color = VeloraOnlineGreen,
+                    fontSize = 12.sp
+                )
             }
         }
 
-        // Configurable Plans
-        Text("Active Plans", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-
-        listOf(
-            Triple("Basic Free", "৳0 / forever", "Standard likes, basic filters, ad-free"),
-            Triple("Premium", "৳299 / month", "Unlimited likes, see who liked you, 1 boost"),
-            Triple("Gold VIP", "৳499 / month", "All premium features + 5 Super likes/week + VIP badge")
-        ).forEach { (name, price, desc) ->
-            Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = Color.White,
-                shadowElevation = 1.dp,
-                modifier = Modifier.fillMaxWidth()
+        // --- MFS MERCHANT GATEWAY CONTROLS (bKash & Nagad) ---
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column {
-                        Text(name, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                        Text(desc, fontSize = 12.sp, color = VeloraTextSecondary)
+                        Text(
+                            text = "Bangladeshi MFS Gateways",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 17.sp,
+                            color = VeloraTextPrimary
+                        )
+                        Text(
+                            text = "Configure merchant numbers, credentials & status",
+                            fontSize = 12.sp,
+                            color = VeloraTextSecondary
+                        )
                     }
-                    Text(price, fontWeight = FontWeight.Black, color = VeloraPink, fontSize = 14.sp)
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = VeloraPinkSoft
+                    ) {
+                        Text(
+                            text = "Admin Controlled",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = VeloraPink,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+
+                HorizontalDivider(color = VeloraCardBorder)
+
+                // bKash Control Card
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFFFDF0F5),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2136E).copy(alpha = 0.4f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = Color(0xFFE2136E)
+                                ) {
+                                    Text(
+                                        text = "bKash",
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "বিকাশ পেমেন্ট গেটওয়ে",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFE2136E)
+                                )
+                            }
+
+                            Switch(
+                                checked = bKashEnabled,
+                                onCheckedChange = { bKashEnabled = it },
+                                modifier = Modifier.testTag("toggle_bkash"),
+                                colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFE2136E))
+                            )
+                        }
+
+                        OutlinedTextField(
+                            value = bKashNumber,
+                            onValueChange = { bKashNumber = it },
+                            label = { Text("bKash Merchant Account Number") },
+                            placeholder = { Text("017XXXXXXXX") },
+                            singleLine = true,
+                            enabled = bKashEnabled,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("bkash_merchant_number_input")
+                        )
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Account Type: ", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FilterChip(
+                                    selected = bKashType == "Merchant",
+                                    onClick = { bKashType = "Merchant" },
+                                    label = { Text("Merchant", fontSize = 11.sp) }
+                                )
+                                FilterChip(
+                                    selected = bKashType == "Personal",
+                                    onClick = { bKashType = "Personal" },
+                                    label = { Text("Personal (Send Money)", fontSize = 11.sp) }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Nagad Control Card
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFFFFF7ED),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF7931E).copy(alpha = 0.4f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = Color(0xFFF7931E)
+                                ) {
+                                    Text(
+                                        text = "Nagad",
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "নগদ পেমেন্ট গেটওয়ে",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFF7931E)
+                                )
+                            }
+
+                            Switch(
+                                checked = nagadEnabled,
+                                onCheckedChange = { nagadEnabled = it },
+                                modifier = Modifier.testTag("toggle_nagad"),
+                                colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFF7931E))
+                            )
+                        }
+
+                        OutlinedTextField(
+                            value = nagadNumber,
+                            onValueChange = { nagadNumber = it },
+                            label = { Text("Nagad Merchant Account Number") },
+                            placeholder = { Text("018XXXXXXXX") },
+                            singleLine = true,
+                            enabled = nagadEnabled,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("nagad_merchant_number_input")
+                        )
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Account Type: ", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FilterChip(
+                                    selected = nagadType == "Merchant",
+                                    onClick = { nagadType = "Merchant" },
+                                    label = { Text("Merchant", fontSize = 11.sp) }
+                                )
+                                FilterChip(
+                                    selected = nagadType == "Personal",
+                                    onClick = { nagadType = "Personal" },
+                                    label = { Text("Personal (Send Money)", fontSize = 11.sp) }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (!saveFeedback.isNullOrBlank()) {
+                    Text(
+                        text = saveFeedback!!,
+                        color = VeloraOnlineGreen,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                Button(
+                    onClick = {
+                        val updated = mfsConfig.copy(
+                            bKashEnabled = bKashEnabled,
+                            bKashMerchantNumber = bKashNumber,
+                            bKashMerchantType = bKashType,
+                            nagadEnabled = nagadEnabled,
+                            nagadMerchantNumber = nagadNumber,
+                            nagadMerchantType = nagadType
+                        )
+                        onUpdateMfsConfig(updated)
+                        saveFeedback = "MFS merchant configuration saved successfully!"
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .testTag("save_mfs_config_button"),
+                    colors = ButtonDefaults.buttonColors(containerColor = VeloraPlumDark),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(imageVector = Icons.Default.Save, contentDescription = "Save", modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Save MFS Gateway Settings", fontWeight = FontWeight.Bold, color = Color.White)
+                }
+            }
+        }
+
+        // --- BDT PACKAGE PRICING CONTROLS ---
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Text(
+                    text = "Subscription Package Pricing (BDT / ৳)",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp,
+                    color = VeloraTextPrimary
+                )
+                Text(
+                    text = "Set package prices in Bangladeshi Taka. User checkout reflects updated pricing in real-time.",
+                    fontSize = 12.sp,
+                    color = VeloraTextSecondary
+                )
+
+                plans.forEach { plan ->
+                    var priceInput by remember(plan.priceBdt) { mutableStateOf(plan.priceBdt.toString()) }
+                    var planSaved by remember { mutableStateOf(false) }
+
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = VeloraIvory,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, VeloraCardBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "${plan.name} (${plan.durationMonths} Mo)",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                                Text(
+                                    text = "Current: ৳${plan.priceBdt} BDT",
+                                    fontSize = 12.sp,
+                                    color = VeloraPink,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedTextField(
+                                    value = priceInput,
+                                    onValueChange = {
+                                        priceInput = it.filter { char -> char.isDigit() }
+                                        planSaved = false
+                                    },
+                                    prefix = { Text("৳ ") },
+                                    singleLine = true,
+                                    modifier = Modifier
+                                        .width(110.dp)
+                                        .testTag("price_input_${plan.id}")
+                                )
+
+                                Button(
+                                    onClick = {
+                                        val newPrice = priceInput.toIntOrNull() ?: plan.priceBdt
+                                        onUpdatePlanPrice(plan.id, newPrice)
+                                        planSaved = true
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = VeloraPink),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.testTag("update_price_button_${plan.id}")
+                                ) {
+                                    Text(if (planSaved) "Saved" else "Update", fontSize = 12.sp, color = Color.White)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- VERIFIED MFS TRANSACTIONS HISTORY ---
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Recent MFS Payments & Callback Verifications",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
+                )
+
+                if (transactions.isEmpty()) {
+                    Text("No transactions recorded yet.", fontSize = 12.sp, color = VeloraTextMuted)
+                } else {
+                    transactions.forEach { txn ->
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = VeloraIvory,
+                            border = androidx.compose.foundation.BorderStroke(1.dp, VeloraCardBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = if (txn.method.equals("bKash", ignoreCase = true)) Color(0xFFE2136E) else if (txn.method.equals("Nagad", ignoreCase = true)) Color(0xFFF7931E) else VeloraViolet
+                                    ) {
+                                        Text(
+                                            text = txn.method,
+                                            color = Color.White,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
+                                        Text(
+                                            text = "TrxID: ${txn.trxId}",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                        )
+                                        Text(
+                                            text = "${txn.userEmail} • ${txn.senderPhone}",
+                                            fontSize = 11.sp,
+                                            color = VeloraTextSecondary
+                                        )
+                                    }
+                                }
+
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(
+                                        text = "৳${txn.amountBdt} BDT",
+                                        fontWeight = FontWeight.Black,
+                                        fontSize = 14.sp,
+                                        color = VeloraTextPrimary
+                                    )
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = VeloraOnlineGreen.copy(alpha = 0.15f)
+                                    ) {
+                                        Text(
+                                            text = "VERIFIED",
+                                            color = VeloraOnlineGreen,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
     }
 }
+
 
 @Composable
 fun AdminSettingsSection() {

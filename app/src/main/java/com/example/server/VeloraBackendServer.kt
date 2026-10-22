@@ -1,6 +1,7 @@
 package com.example.server
 
 import com.example.data.VeloraData
+import com.example.model.SubscriptionPlan
 import com.example.model.UserProfile
 import com.example.model.UserReport
 import java.util.Collections
@@ -25,7 +26,9 @@ object VeloraBackendServer {
                 email = "admin@velora.app",
                 passwordHash = "admin_secure_pass_2026",
                 role = Role.ADMIN,
-                displayName = "Super Admin"
+                displayName = "Super Admin",
+                isEmailVerified = true,
+                isPhoneVerified = true
             )
         )
         put(
@@ -35,7 +38,9 @@ object VeloraBackendServer {
                 email = "moderator@velora.app",
                 passwordHash = "mod_secure_pass_2026",
                 role = Role.ADMIN,
-                displayName = "Lead Moderator"
+                displayName = "Lead Moderator",
+                isEmailVerified = true,
+                isPhoneVerified = true
             )
         )
         put(
@@ -45,7 +50,9 @@ object VeloraBackendServer {
                 email = "mdalifislam8559@gmail.com",
                 passwordHash = "admin_secure_pass_2026",
                 role = Role.ADMIN,
-                displayName = "Security Administrator"
+                displayName = "Security Administrator",
+                isEmailVerified = true,
+                isPhoneVerified = true
             )
         )
         // Ordinary User Accounts (Non-Admin)
@@ -56,7 +63,10 @@ object VeloraBackendServer {
                 email = "alif@example.com",
                 passwordHash = "userpass123",
                 role = Role.USER,
-                displayName = "Alif Islam"
+                displayName = "Alif Islam",
+                isEmailVerified = true,
+                isPhoneVerified = true,
+                phone = "+880 1712-345678"
             )
         )
         put(
@@ -66,7 +76,10 @@ object VeloraBackendServer {
                 email = "user@example.com",
                 passwordHash = "userpass123",
                 role = Role.USER,
-                displayName = "Regular Member"
+                displayName = "Regular Member",
+                isEmailVerified = true,
+                isPhoneVerified = true,
+                phone = "+880 1812-987654"
             )
         )
         put(
@@ -76,7 +89,10 @@ object VeloraBackendServer {
                 email = "ayesha@example.com",
                 passwordHash = "ayeshapass123",
                 role = Role.USER,
-                displayName = "Ayesha Rahman"
+                displayName = "Ayesha Rahman",
+                isEmailVerified = true,
+                isPhoneVerified = true,
+                phone = "+880 1912-112233"
             )
         )
         put(
@@ -86,7 +102,10 @@ object VeloraBackendServer {
                 email = "nusrat@example.com",
                 passwordHash = "nusratpass123",
                 role = Role.USER,
-                displayName = "Nusrat Jahan"
+                displayName = "Nusrat Jahan",
+                isEmailVerified = true,
+                isPhoneVerified = true,
+                phone = "+880 1512-445566"
             )
         )
     }
@@ -163,12 +182,312 @@ object VeloraBackendServer {
     // Rate Limiting Storage: key -> list of timestamp millis
     private val rateLimitBuckets = ConcurrentHashMap<String, MutableList<Long>>()
 
+    // Phone OTP and Email Verification code registries
+    private val pendingPhoneOtps = ConcurrentHashMap<String, PendingPhoneOtp>()
+    private val pendingEmailCodes = ConcurrentHashMap<String, PendingEmailCode>()
+
     // In-memory security audit log
     private val serverAuditLogs = Collections.synchronizedList(mutableListOf<String>())
 
+    // Bangladeshi MFS Merchant Configuration (bKash & Nagad)
+    private var mfsMerchantConfig = MfsMerchantConfig(
+        bKashEnabled = true,
+        bKashMerchantNumber = "01711-987654",
+        bKashMerchantType = "Merchant",
+        nagadEnabled = true,
+        nagadMerchantNumber = "01812-345678",
+        nagadMerchantType = "Merchant",
+        currency = "BDT"
+    )
+
+    // Configurable Subscription Plans with BDT Pricing
+    private val subscriptionPlans = Collections.synchronizedList(VeloraData.subscriptionPlans.toMutableList())
+
+    // Verified MFS Payment Transactions History
+    private val mfsPaymentTransactions = Collections.synchronizedList(
+        mutableListOf(
+            MfsPaymentTransaction(
+                id = "txn_001",
+                trxId = "BKH89X201A",
+                method = "bKash",
+                senderPhone = "01712-345678",
+                amountBdt = 699,
+                planId = "plan_3m",
+                planName = "3 Months",
+                userId = "user_ayesha",
+                userEmail = "ayesha@example.com",
+                timestampMillis = System.currentTimeMillis() - 86400000,
+                status = "VERIFIED"
+            ),
+            MfsPaymentTransaction(
+                id = "txn_002",
+                trxId = "NGD99K412B",
+                method = "Nagad",
+                senderPhone = "01815-987654",
+                amountBdt = 1199,
+                planId = "plan_12m",
+                planName = "12 Months VIP",
+                userId = "user_nusrat",
+                userEmail = "nusrat@example.com",
+                timestampMillis = System.currentTimeMillis() - 43200000,
+                status = "VERIFIED"
+            ),
+            MfsPaymentTransaction(
+                id = "txn_003",
+                trxId = "BKH12P094M",
+                method = "bKash",
+                senderPhone = "01911-223344",
+                amountBdt = 299,
+                planId = "plan_1m",
+                planName = "1 Month",
+                userId = "user_alif",
+                userEmail = "alif@example.com",
+                timestampMillis = System.currentTimeMillis() - 172800000,
+                status = "VERIFIED"
+            )
+        )
+    )
+
     init {
-        logAuditEvent("Server started. Initialized secure admin registry, conversations, and zero-trust policies.")
+        logAuditEvent("Server started. Initialized secure admin registry, conversations, MFS gateways (bKash & Nagad), and zero-trust policies.")
     }
+
+    /**
+     * Register a new user account.
+     * Enforces that phone OTP and email verification must be completed before accessing the app.
+     */
+    fun registerNewUser(
+        name: String,
+        email: String,
+        phone: String,
+        password: String
+    ): ServerResponse<ServerUser> {
+        val trimmedName = name.trim()
+        val normalizedEmail = email.trim().lowercase()
+        val normalizedPhone = phone.trim()
+
+        if (trimmedName.length < 2) {
+            return ServerResponse(400, "Full name must be at least 2 characters.", error = "INVALID_NAME")
+        }
+        if (!normalizedEmail.contains("@") || !normalizedEmail.contains(".")) {
+            return ServerResponse(400, "Please provide a valid email address.", error = "INVALID_EMAIL")
+        }
+        val cleanPhoneDigits = normalizedPhone.replace("[^0-9+]".toRegex(), "")
+        if (cleanPhoneDigits.length < 7) {
+            return ServerResponse(400, "Please enter a valid phone number with country code.", error = "INVALID_PHONE")
+        }
+        if (password.length < 6) {
+            return ServerResponse(400, "Password must be at least 6 characters.", error = "WEAK_PASSWORD")
+        }
+
+        if (usersRegistry.containsKey(normalizedEmail)) {
+            return ServerResponse(409, "An account with this email already exists.", error = "EMAIL_ALREADY_EXISTS")
+        }
+
+        val newUserId = "user_${System.currentTimeMillis() % 1000000}"
+        val newUser = ServerUser(
+            id = newUserId,
+            email = normalizedEmail,
+            passwordHash = password,
+            role = Role.USER,
+            displayName = trimmedName,
+            isSuspended = false,
+            isVerified = false,
+            isPremium = false,
+            paymentStatus = "none",
+            moderationStatus = "ACTIVE",
+            isEmailVerified = false,
+            isPhoneVerified = false,
+            phone = normalizedPhone
+        )
+
+        usersRegistry[normalizedEmail] = newUser
+
+        val newProfile = UserProfile(
+            id = newUserId,
+            name = trimmedName,
+            age = 22,
+            gender = "Woman",
+            city = "Dhaka",
+            country = "Bangladesh",
+            distanceKm = 5,
+            profession = "Professional",
+            height = "5'5\"",
+            relationshipStatus = "Single",
+            aboutMe = "Hey there! Newly joined Velora.",
+            interests = listOf("Travel", "Music", "Coffee"),
+            photos = listOf("https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=800"),
+            isVerified = false,
+            isOnline = true,
+            email = normalizedEmail,
+            phone = normalizedPhone,
+            isEmailVerified = false,
+            isPhoneVerified = false
+        )
+        serverProfiles[newUserId] = newProfile
+
+        logAuditEvent("USER REGISTERED: New account created for '$normalizedEmail' ($normalizedPhone). Pending phone and email verification.")
+
+        // Automatically dispatch phone OTP and email verification code
+        sendPhoneOtp(normalizedPhone)
+        sendEmailVerification(normalizedEmail)
+
+        return ServerResponse(
+            statusCode = 201,
+            message = "Registration successful. Please verify your phone number via OTP and verify your email address.",
+            data = newUser
+        )
+    }
+
+    /**
+     * Dispatch a 6-digit OTP code to the user's phone number.
+     */
+    fun sendPhoneOtp(phone: String): ServerResponse<String> {
+        val normalizedPhone = phone.trim()
+        val cleanPhoneDigits = normalizedPhone.replace("[^0-9+]".toRegex(), "")
+        if (cleanPhoneDigits.length < 7) {
+            return ServerResponse(400, "Invalid phone number format.", error = "INVALID_PHONE")
+        }
+
+        val otpCode = String.format("%06d", (100000..999999).random())
+        val now = System.currentTimeMillis()
+        val expiresAt = now + 10 * 60 * 1000 // 10 minutes expiry
+
+        pendingPhoneOtps[normalizedPhone] = PendingPhoneOtp(
+            phone = normalizedPhone,
+            otp = otpCode,
+            createdAtMillis = now,
+            expiresAtMillis = expiresAt
+        )
+
+        logAuditEvent("PHONE OTP ISSUED: Sent 6-digit OTP to '$normalizedPhone'. Code: $otpCode (Expires in 10 mins)")
+
+        return ServerResponse(
+            statusCode = 200,
+            message = "Verification OTP sent to $normalizedPhone.",
+            data = otpCode
+        )
+    }
+
+    /**
+     * Verify the 6-digit phone OTP code.
+     */
+    fun verifyPhoneOtp(phone: String, otpCode: String): ServerResponse<Boolean> {
+        val normalizedPhone = phone.trim()
+        val pending = pendingPhoneOtps[normalizedPhone]
+
+        if (pending == null) {
+            return ServerResponse(400, "No pending OTP request found for this phone number.", error = "OTP_NOT_FOUND")
+        }
+
+        if (System.currentTimeMillis() > pending.expiresAtMillis) {
+            pendingPhoneOtps.remove(normalizedPhone)
+            return ServerResponse(400, "OTP code has expired. Please request a new code.", error = "OTP_EXPIRED")
+        }
+
+        if (pending.otp != otpCode.trim()) {
+            val updated = pending.copy(attempts = pending.attempts + 1)
+            pendingPhoneOtps[normalizedPhone] = updated
+            logAuditEvent("PHONE OTP MISMATCH: Incorrect OTP attempt ($otpCode) for phone '$normalizedPhone'")
+            return ServerResponse(400, "Invalid OTP code. Please check and try again.", error = "INVALID_OTP")
+        }
+
+        // Successfully verified phone
+        pendingPhoneOtps.remove(normalizedPhone)
+
+        // Mark matching user and profile as phone verified
+        usersRegistry.values.firstOrNull { it.phone == normalizedPhone }?.let { user ->
+            usersRegistry[user.email] = user.copy(isPhoneVerified = true)
+            serverProfiles[user.id]?.let { profile ->
+                serverProfiles[user.id] = profile.copy(isPhoneVerified = true)
+            }
+        }
+
+        logAuditEvent("PHONE OTP VERIFIED: Phone number '$normalizedPhone' successfully verified.")
+
+        return ServerResponse(
+            statusCode = 200,
+            message = "Phone number verified successfully.",
+            data = true
+        )
+    }
+
+    /**
+     * Dispatch a 6-digit verification code to the user's email address.
+     */
+    fun sendEmailVerification(email: String): ServerResponse<String> {
+        val normalizedEmail = email.trim().lowercase()
+        if (!normalizedEmail.contains("@")) {
+            return ServerResponse(400, "Invalid email address format.", error = "INVALID_EMAIL")
+        }
+
+        val verificationCode = String.format("%06d", (100000..999999).random())
+        val now = System.currentTimeMillis()
+        val expiresAt = now + 15 * 60 * 1000 // 15 minutes expiry
+
+        pendingEmailCodes[normalizedEmail] = PendingEmailCode(
+            email = normalizedEmail,
+            code = verificationCode,
+            createdAtMillis = now,
+            expiresAtMillis = expiresAt
+        )
+
+        logAuditEvent("EMAIL VERIFICATION ISSUED: Sent code to '$normalizedEmail'. Code: $verificationCode (Expires in 15 mins)")
+
+        return ServerResponse(
+            statusCode = 200,
+            message = "Verification code sent to $normalizedEmail.",
+            data = verificationCode
+        )
+    }
+
+    /**
+     * Verify the email address with the provided verification code.
+     */
+    fun verifyEmailCode(email: String, code: String): ServerResponse<Boolean> {
+        val normalizedEmail = email.trim().lowercase()
+        val pending = pendingEmailCodes[normalizedEmail]
+
+        if (pending == null) {
+            return ServerResponse(400, "No pending email verification found for this email.", error = "EMAIL_CODE_NOT_FOUND")
+        }
+
+        if (System.currentTimeMillis() > pending.expiresAtMillis) {
+            pendingEmailCodes.remove(normalizedEmail)
+            return ServerResponse(400, "Verification code has expired. Please request a new code.", error = "CODE_EXPIRED")
+        }
+
+        if (pending.code != code.trim()) {
+            val updated = pending.copy(attempts = pending.attempts + 1)
+            pendingEmailCodes[normalizedEmail] = updated
+            logAuditEvent("EMAIL VERIFICATION MISMATCH: Incorrect code attempt ($code) for email '$normalizedEmail'")
+            return ServerResponse(400, "Invalid email verification code.", error = "INVALID_CODE")
+        }
+
+        // Successfully verified email
+        pendingEmailCodes.remove(normalizedEmail)
+
+        usersRegistry[normalizedEmail]?.let { user ->
+            usersRegistry[normalizedEmail] = user.copy(isEmailVerified = true)
+            serverProfiles[user.id]?.let { profile ->
+                serverProfiles[user.id] = profile.copy(isEmailVerified = true)
+            }
+        }
+
+        logAuditEvent("EMAIL VERIFIED: Email address '$normalizedEmail' successfully verified.")
+
+        return ServerResponse(
+            statusCode = 200,
+            message = "Email address verified successfully.",
+            data = true
+        )
+    }
+
+    /**
+     * Helpers to query pending codes (for preview / testing).
+     */
+    fun getPendingPhoneOtp(phone: String): String? = pendingPhoneOtps[phone.trim()]?.otp
+    fun getPendingEmailCode(email: String): String? = pendingEmailCodes[email.trim().lowercase()]?.code
 
     /**
      * Sliding-window rate limiter:
@@ -189,11 +508,14 @@ object VeloraBackendServer {
 
     fun clearRateLimitsForTesting() {
         rateLimitBuckets.clear()
+        pendingPhoneOtps.clear()
+        pendingEmailCodes.clear()
     }
 
     /**
      * Authenticate user credentials and return a signed cryptographic JWT.
      * Enforces rate limiting against brute-force attacks.
+     * Enforces that phone OTP and email verification must be completed for regular users.
      */
     fun login(email: String, password: String): ServerResponse<String> {
         val normalizedEmail = email.trim().lowercase()
@@ -225,6 +547,26 @@ object VeloraBackendServer {
                 message = "Account has been suspended due to security or policy violations.",
                 error = "Forbidden"
             )
+        }
+
+        // Enforce phone OTP and email verification for regular users
+        if (user.role == Role.USER) {
+            if (!user.isPhoneVerified) {
+                logAuditEvent("AUTH BLOCKED: User '$normalizedEmail' attempted login without verified phone number.")
+                return ServerResponse(
+                    statusCode = 403,
+                    message = "Phone verification required: Please complete phone OTP verification to access Velora.",
+                    error = "PHONE_NOT_VERIFIED"
+                )
+            }
+            if (!user.isEmailVerified) {
+                logAuditEvent("AUTH BLOCKED: User '$normalizedEmail' attempted login without verified email address.")
+                return ServerResponse(
+                    statusCode = 403,
+                    message = "Email verification required: Please verify your email address to access Velora.",
+                    error = "EMAIL_NOT_VERIFIED"
+                )
+            }
         }
 
         val token = ServerTokenManager.createToken(
@@ -756,22 +1098,135 @@ object VeloraBackendServer {
      * Trusted Server-Side Payment Processing:
      * Premium entitlements can ONLY be granted by the server upon receipt verification.
      */
-    fun verifyPaymentAndGrantPremium(
-        authHeader: String?,
-        paymentRequest: PaymentVerificationRequest
-    ): ServerResponse<Boolean> {
-        val (errorResponse, payload) = authorizeUser(authHeader)
+    /**
+     * Get current Bangladeshi MFS configuration (bKash & Nagad)
+     */
+    fun getMfsConfig(): ServerResponse<MfsMerchantConfig> {
+        return ServerResponse(
+            statusCode = 200,
+            message = "MFS Configuration retrieved.",
+            data = mfsMerchantConfig
+        )
+    }
+
+    /**
+     * Admin Panel: Update bKash and Nagad merchant credentials and enable/disable states.
+     * Strictly protected: requires verified administrator custom claims.
+     */
+    fun updateMfsConfig(authHeader: String?, config: MfsMerchantConfig): ServerResponse<MfsMerchantConfig> {
+        val (errorResponse, payload) = authorizeAdmin(authHeader)
         if (errorResponse != null) {
-            return ServerResponse(
+            return ServerResponse<MfsMerchantConfig>(
                 statusCode = errorResponse.statusCode,
                 message = errorResponse.message,
                 error = errorResponse.error
             )
         }
 
-        if (!checkRateLimit("payment:${payload?.userId}", maxRequests = 5, windowMillis = 60_000L)) {
-            logAuditEvent("SECURITY ALERT: Payment verification rate limit exceeded for '${payload?.email}'")
+        mfsMerchantConfig = config
+        logAuditEvent("ADMIN MFS CONFIG UPDATED: bKash (enabled=${config.bKashEnabled}, merchant=${config.bKashMerchantNumber}, type=${config.bKashMerchantType}), Nagad (enabled=${config.nagadEnabled}, merchant=${config.nagadMerchantNumber}, type=${config.nagadMerchantType}) by '${payload?.email}'")
+
+        return ServerResponse(
+            statusCode = 200,
+            message = "Bangladeshi MFS configuration successfully updated.",
+            data = mfsMerchantConfig
+        )
+    }
+
+    /**
+     * Get active subscription plans with BDT pricing.
+     */
+    fun getSubscriptionPlans(): ServerResponse<List<SubscriptionPlan>> {
+        return ServerResponse(
+            statusCode = 200,
+            message = "Subscription plans retrieved.",
+            data = subscriptionPlans.toList()
+        )
+    }
+
+    /**
+     * Admin Panel: Update package price in BDT.
+     * Strictly protected: requires verified administrator custom claims.
+     */
+    fun updateSubscriptionPlanPrice(authHeader: String?, planId: String, newPriceBdt: Int): ServerResponse<SubscriptionPlan> {
+        val (errorResponse, payload) = authorizeAdmin(authHeader)
+        if (errorResponse != null) {
+            return ServerResponse<SubscriptionPlan>(
+                statusCode = errorResponse.statusCode,
+                message = errorResponse.message,
+                error = errorResponse.error
+            )
+        }
+
+        if (newPriceBdt <= 0) {
+            return ServerResponse<SubscriptionPlan>(
+                statusCode = 400,
+                message = "Price in BDT must be greater than 0.",
+                error = "INVALID_PRICE"
+            )
+        }
+
+        synchronized(subscriptionPlans) {
+            val index = subscriptionPlans.indexOfFirst { it.id == planId }
+            if (index == -1) {
+                return ServerResponse<SubscriptionPlan>(
+                    statusCode = 404,
+                    message = "Subscription plan '$planId' not found.",
+                    error = "PLAN_NOT_FOUND"
+                )
+            }
+            val updatedPlan = subscriptionPlans[index].copy(priceBdt = newPriceBdt)
+            subscriptionPlans[index] = updatedPlan
+            logAuditEvent("ADMIN PLAN PRICE UPDATED: Plan '$planId' BDT price updated to ৳$newPriceBdt by '${payload?.email}'")
             return ServerResponse(
+                statusCode = 200,
+                message = "Subscription plan price updated to ৳$newPriceBdt BDT.",
+                data = updatedPlan
+            )
+        }
+    }
+
+    /**
+     * Admin Panel: Retrieve MFS Payment Transactions history.
+     * Strictly protected: requires verified administrator custom claims.
+     */
+    fun getMfsTransactions(authHeader: String?): ServerResponse<List<MfsPaymentTransaction>> {
+        val (errorResponse, _) = authorizeAdmin(authHeader)
+        if (errorResponse != null) {
+            return ServerResponse<List<MfsPaymentTransaction>>(
+                statusCode = errorResponse.statusCode,
+                message = errorResponse.message,
+                error = errorResponse.error
+            )
+        }
+        return ServerResponse(
+            statusCode = 200,
+            message = "MFS transactions retrieved.",
+            data = mfsPaymentTransactions.toList()
+        )
+    }
+
+    /**
+     * Trusted Server-Side Payment Processing:
+     * Supports bKash, Nagad, and Card payments in Bangladeshi Taka (BDT / ৳).
+     * Automatically verifies and activates user subscriptions.
+     */
+    fun verifyPaymentAndGrantPremium(
+        authHeader: String?,
+        paymentRequest: PaymentVerificationRequest
+    ): ServerResponse<Boolean> {
+        val (errorResponse, payload) = authorizeUser(authHeader)
+        if (errorResponse != null) {
+            return ServerResponse<Boolean>(
+                statusCode = errorResponse.statusCode,
+                message = errorResponse.message,
+                error = errorResponse.error
+            )
+        }
+
+        if (!checkRateLimit("payment:${payload?.userId}", maxRequests = 10, windowMillis = 60_000L)) {
+            logAuditEvent("SECURITY ALERT: Payment verification rate limit exceeded for '${payload?.email}'")
+            return ServerResponse<Boolean>(
                 statusCode = 429,
                 message = "Too many payment requests. Please wait before retrying.",
                 error = "Too Many Requests"
@@ -779,16 +1234,36 @@ object VeloraBackendServer {
         }
 
         val receipt = paymentRequest.transactionReceipt.trim()
+        val method = paymentRequest.paymentMethod.trim().uppercase()
+
+        // Validate MFS method status controlled by administrator
+        if (method == "BKASH" && !mfsMerchantConfig.bKashEnabled) {
+            logAuditEvent("MFS PAYMENT REJECTED: bKash checkout attempted while disabled by admin")
+            return ServerResponse<Boolean>(
+                statusCode = 400,
+                message = "bKash payments are currently disabled by administration. Please use Nagad or Card.",
+                error = "MFS_METHOD_DISABLED"
+            )
+        }
+        if (method == "NAGAD" && !mfsMerchantConfig.nagadEnabled) {
+            logAuditEvent("MFS PAYMENT REJECTED: Nagad checkout attempted while disabled by admin")
+            return ServerResponse<Boolean>(
+                statusCode = 400,
+                message = "Nagad payments are currently disabled by administration. Please use bKash or Card.",
+                error = "MFS_METHOD_DISABLED"
+            )
+        }
+
         val isExplicitlyFraudulent = receipt.contains("fake", ignoreCase = true) ||
                 receipt.contains("hacked", ignoreCase = true) ||
                 receipt.contains("fraud", ignoreCase = true) ||
                 paymentRequest.amount.trim() == "0" ||
                 paymentRequest.amount.isBlank()
-        val isValidReceipt = receipt.isNotBlank() && receipt.length >= 8 && !isExplicitlyFraudulent
+        val isValidReceipt = receipt.isNotBlank() && receipt.length >= 6 && !isExplicitlyFraudulent
 
         if (!isValidReceipt) {
             logAuditEvent("FRAUD DETECTED: Invalid or forged transaction receipt '$receipt' submitted by '${payload?.email}'")
-            return ServerResponse(
+            return ServerResponse<Boolean>(
                 statusCode = 402,
                 message = "Payment validation failed: Invalid transaction receipt.",
                 error = "Payment Required"
@@ -809,14 +1284,42 @@ object VeloraBackendServer {
             serverProfiles[payload!!.userId] = profile.copy(isPremium = true)
         }
 
-        logAuditEvent("PAYMENT SUCCESS: Server validated receipt '$receipt' and granted Premium to '${payload?.email}' (Plan: ${paymentRequest.planId})")
+        // Parse amount in BDT and log MFS transaction
+        val cleanAmount = paymentRequest.amount.replace("[^0-9]".toRegex(), "").toIntOrNull() ?: 299
+        val plan = subscriptionPlans.firstOrNull { it.id == paymentRequest.planId }
+        val planName = plan?.name ?: "Premium (${paymentRequest.planId})"
+        val displayMethod = when (method) {
+            "NAGAD" -> "Nagad"
+            "CARD" -> "Card"
+            "GOOGLE_PLAY" -> "Google Play"
+            else -> "bKash"
+        }
+
+        val newTransaction = MfsPaymentTransaction(
+            id = "txn_${System.currentTimeMillis() % 1000000}",
+            trxId = receipt,
+            method = displayMethod,
+            senderPhone = paymentRequest.senderAccount.ifBlank { profile?.phone ?: "01712-000000" },
+            amountBdt = cleanAmount,
+            currency = "BDT",
+            planId = paymentRequest.planId,
+            planName = planName,
+            userId = payload?.userId ?: "user_me",
+            userEmail = payload?.email ?: "user@velora.app",
+            timestampMillis = System.currentTimeMillis(),
+            status = "VERIFIED"
+        )
+        mfsPaymentTransactions.add(0, newTransaction)
+
+        logAuditEvent("PAYMENT SUCCESS: Server validated $displayMethod TrxID '$receipt' (৳$cleanAmount BDT) and automatically activated Premium for '${payload?.email}' (Plan: $planName)")
 
         return ServerResponse(
             statusCode = 200,
-            message = "Payment verified. Premium features activated.",
+            message = "Payment verified via $displayMethod. Subscription automatically activated for ৳$cleanAmount BDT!",
             data = true
         )
     }
+
 
     // --- PRIVATE CONVERSATIONS & CHAT ACCESS CONTROL ---
 

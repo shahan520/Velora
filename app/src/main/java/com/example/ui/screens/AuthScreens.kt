@@ -9,10 +9,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -188,19 +193,6 @@ fun SplashScreen(
                         modifier = Modifier
                             .clickable(onClick = onLoginClick)
                             .testTag("login_link")
-                    )
-                }
-
-                if (onAdminRouteClick != null) {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text(
-                        text = "Staff Portal (/admin)",
-                        color = VeloraLavender.copy(alpha = 0.5f),
-                        fontSize = 11.sp,
-                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                        modifier = Modifier
-                            .clickable(onClick = onAdminRouteClick)
-                            .testTag("splash_admin_portal_link")
                     )
                 }
             }
@@ -611,6 +603,669 @@ fun LanguageSelectionScreen(
         ) {
             Text(
                 text = "Continue",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
+        }
+    }
+}
+
+@Composable
+fun RegistrationScreen(
+    onRegister: (name: String, email: String, phone: String, pass: String) -> Unit,
+    onNavigateToLogin: () -> Unit,
+    errorMessage: String? = null,
+    onBack: () -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf("") }
+    var phone by remember { mutableStateOf("+880 ") }
+    var password by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(24.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier.testTag("back_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = VeloraTextPrimary
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Create Account",
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = VeloraTextPrimary
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Security requirement banner
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = VeloraPinkSoft,
+                border = androidx.compose.foundation.BorderStroke(1.dp, VeloraPink),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Shield,
+                        contentDescription = "Security",
+                        tint = VeloraPink,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = "Phone OTP verification & email address verification are strictly required for all new accounts.",
+                        fontSize = 12.sp,
+                        color = VeloraPink,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+
+            if (!errorMessage.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFF2C1015),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE53935)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = errorMessage,
+                        color = Color(0xFFFF8A80),
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // Full Name Input
+            Text(
+                text = "Full Name",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = VeloraTextSecondary
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                placeholder = { Text("e.g. Alif Islam") },
+                leadingIcon = {
+                    Icon(imageVector = Icons.Default.Person, contentDescription = "Name", tint = VeloraPink)
+                },
+                singleLine = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("name_input"),
+                shape = RoundedCornerShape(14.dp)
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Email Input
+            Text(
+                text = "Email Address",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = VeloraTextSecondary
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            OutlinedTextField(
+                value = email,
+                onValueChange = { email = it },
+                placeholder = { Text("e.g. alif@example.com") },
+                leadingIcon = {
+                    Icon(imageVector = Icons.Default.Email, contentDescription = "Email", tint = VeloraPink)
+                },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                singleLine = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("email_input"),
+                shape = RoundedCornerShape(14.dp)
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Phone Number Input
+            Text(
+                text = "Phone Number (SMS OTP Required)",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = VeloraTextSecondary
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            OutlinedTextField(
+                value = phone,
+                onValueChange = { phone = it },
+                placeholder = { Text("+880 1812-345678") },
+                leadingIcon = {
+                    Icon(imageVector = Icons.Default.Phone, contentDescription = "Phone", tint = VeloraPink)
+                },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                singleLine = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("phone_input"),
+                shape = RoundedCornerShape(14.dp)
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Password Input
+            Text(
+                text = "Password (min 6 characters)",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = VeloraTextSecondary
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            OutlinedTextField(
+                value = password,
+                onValueChange = { password = it },
+                placeholder = { Text("••••••••") },
+                leadingIcon = {
+                    Icon(imageVector = Icons.Default.Lock, contentDescription = "Password", tint = VeloraPink)
+                },
+                trailingIcon = {
+                    IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                        Icon(
+                            imageVector = if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            contentDescription = if (passwordVisible) "Hide password" else "Show password",
+                            tint = VeloraTextSecondary
+                        )
+                    }
+                },
+                visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                singleLine = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("password_input"),
+                shape = RoundedCornerShape(14.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Button(
+                onClick = { onRegister(name, email, phone, password) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(54.dp)
+                    .testTag("register_button"),
+                colors = ButtonDefaults.buttonColors(containerColor = VeloraPink),
+                shape = RoundedCornerShape(27.dp)
+            ) {
+                Text(
+                    text = "Continue to Phone Verification",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "Already have an account? ",
+                    color = VeloraTextSecondary,
+                    fontSize = 14.sp
+                )
+                Text(
+                    text = "Log In",
+                    color = VeloraPink,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    modifier = Modifier
+                        .clickable(onClick = onNavigateToLogin)
+                        .testTag("login_link")
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun PhoneOtpVerificationScreen(
+    phoneNumber: String,
+    simulatedOtp: String?,
+    onVerifyOtp: (otp: String) -> Unit,
+    onResendOtp: () -> Unit,
+    errorMessage: String? = null,
+    onBack: () -> Unit
+) {
+    var otpInput by remember { mutableStateOf("") }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(24.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier.testTag("back_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = VeloraTextPrimary
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Phone Verification",
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = VeloraTextPrimary
+                )
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            Box(
+                modifier = Modifier
+                    .size(80.dp)
+                    .clip(CircleShape)
+                    .background(VeloraPinkSoft)
+                    .align(Alignment.CenterHorizontally),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PhoneAndroid,
+                    contentDescription = "Phone OTP",
+                    tint = VeloraPink,
+                    modifier = Modifier.size(44.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text(
+                text = "Enter 6-Digit OTP",
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold,
+                color = VeloraTextPrimary,
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "We sent a 6-digit verification code to:\n$phoneNumber",
+                fontSize = 14.sp,
+                color = VeloraTextSecondary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            )
+
+            // Simulated SMS Delivery card for instant testing and emulator convenience
+            if (!simulatedOtp.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(20.dp))
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = VeloraPlumDark,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, VeloraViolet),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Sms,
+                                    contentDescription = "SMS",
+                                    tint = VeloraViolet,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "SMS Dispatch (Simulation)",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = VeloraViolet
+                                )
+                            }
+                            TextButton(
+                                onClick = { otpInput = simulatedOtp },
+                                modifier = Modifier.testTag("autofill_otp_button")
+                            ) {
+                                Text("Fill OTP", fontSize = 12.sp, color = VeloraPink)
+                            }
+                        }
+                        Text(
+                            text = "Your Velora verification code is $simulatedOtp. Valid for 10 minutes.",
+                            fontSize = 13.sp,
+                            color = VeloraLavender,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+                }
+            }
+
+            if (!errorMessage.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFF2C1015),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE53935)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = errorMessage,
+                        color = Color(0xFFFF8A80),
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // OTP Input Field
+            OutlinedTextField(
+                value = otpInput,
+                onValueChange = { if (it.length <= 6) otpInput = it },
+                placeholder = { Text("Enter 6-digit OTP") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("otp_input"),
+                shape = RoundedCornerShape(14.dp)
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                TextButton(
+                    onClick = onResendOtp,
+                    modifier = Modifier.testTag("resend_otp_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Resend",
+                        tint = VeloraPink,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Resend Code",
+                        color = VeloraPink,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        }
+
+        Button(
+            onClick = { onVerifyOtp(otpInput) },
+            enabled = otpInput.trim().length == 6,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(54.dp)
+                .testTag("verify_otp_button"),
+            colors = ButtonDefaults.buttonColors(containerColor = VeloraPink),
+            shape = RoundedCornerShape(27.dp)
+        ) {
+            Text(
+                text = "Verify Phone & Continue",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
+        }
+    }
+}
+
+@Composable
+fun EmailVerificationScreen(
+    email: String,
+    simulatedCode: String?,
+    onVerifyEmail: (code: String) -> Unit,
+    onResendEmail: () -> Unit,
+    errorMessage: String? = null,
+    onBack: () -> Unit
+) {
+    var codeInput by remember { mutableStateOf("") }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(24.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier.testTag("back_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = VeloraTextPrimary
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Email Verification",
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = VeloraTextPrimary
+                )
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            Box(
+                modifier = Modifier
+                    .size(80.dp)
+                    .clip(CircleShape)
+                    .background(VeloraPinkSoft)
+                    .align(Alignment.CenterHorizontally),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.MarkEmailRead,
+                    contentDescription = "Email Verification",
+                    tint = VeloraPink,
+                    modifier = Modifier.size(44.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text(
+                text = "Verify Email Address",
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold,
+                color = VeloraTextPrimary,
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "We sent a 6-digit confirmation code to:\n$email\n\nYou must verify your email before accessing Velora.",
+                fontSize = 14.sp,
+                color = VeloraTextSecondary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            )
+
+            // Simulated Email Inbox card for testing convenience
+            if (!simulatedCode.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(20.dp))
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = VeloraPlumDark,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, VeloraViolet),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Email,
+                                    contentDescription = "Inbox",
+                                    tint = VeloraViolet,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Velora Inbox (Simulation)",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = VeloraViolet
+                                )
+                            }
+                            TextButton(
+                                onClick = { codeInput = simulatedCode },
+                                modifier = Modifier.testTag("autofill_email_button")
+                            ) {
+                                Text("Fill Code", fontSize = 12.sp, color = VeloraPink)
+                            }
+                        }
+                        Text(
+                            text = "Subject: Confirm your Velora email address\nCode: $simulatedCode",
+                            fontSize = 13.sp,
+                            color = VeloraLavender,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+                }
+            }
+
+            if (!errorMessage.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFF2C1015),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE53935)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = errorMessage,
+                        color = Color(0xFFFF8A80),
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Code Input Field
+            OutlinedTextField(
+                value = codeInput,
+                onValueChange = { if (it.length <= 6) codeInput = it },
+                placeholder = { Text("Enter 6-digit code") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("email_code_input"),
+                shape = RoundedCornerShape(14.dp)
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                TextButton(
+                    onClick = onResendEmail,
+                    modifier = Modifier.testTag("resend_email_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Resend",
+                        tint = VeloraPink,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Resend Email Code",
+                        color = VeloraPink,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        }
+
+        Button(
+            onClick = { onVerifyEmail(codeInput) },
+            enabled = codeInput.trim().length == 6,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(54.dp)
+                .testTag("verify_email_button"),
+            colors = ButtonDefaults.buttonColors(containerColor = VeloraPink),
+            shape = RoundedCornerShape(27.dp)
+        ) {
+            Text(
+                text = "Verify Email & Complete Registration",
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White

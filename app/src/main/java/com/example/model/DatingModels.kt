@@ -3,6 +3,9 @@ package com.example.model
 enum class Screen {
     SPLASH,
     WELCOME,
+    REGISTRATION,
+    PHONE_OTP_VERIFICATION,
+    EMAIL_VERIFICATION,
     AGE_VERIFICATION,
     LANGUAGE_SELECTION,
     MAIN_DISCOVER,
@@ -53,7 +56,9 @@ data class UserProfile(
     val isPremium: Boolean = false,
     val joinedDate: String = "10 Oct 2026",
     val email: String = "",
-    val phone: String = ""
+    val phone: String = "",
+    val isEmailVerified: Boolean = false,
+    val isPhoneVerified: Boolean = false
 )
 
 data class MatchItem(

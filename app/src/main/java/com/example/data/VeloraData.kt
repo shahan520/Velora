@@ -25,7 +25,9 @@ object VeloraData {
         isVerified = true,
         isOnline = true,
         email = "alif.islam@example.com",
-        phone = "+880 1712-345678"
+        phone = "+880 1712-345678",
+        isEmailVerified = true,
+        isPhoneVerified = true
     )
 
     // Curated Discover Profiles (Including exact profiles from the user's reference mockup)

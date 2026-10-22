@@ -32,6 +32,19 @@ data class VeloraUiState(
     val currentAdminDisplayName: String? = null,
     val authorizedAdminsList: List<com.example.server.ServerUser> = emptyList(),
 
+    // User Authentication & Verification States
+    val pendingAuthName: String = "",
+    val pendingAuthEmail: String = "",
+    val pendingAuthPhone: String = "",
+    val isPhoneVerified: Boolean = false,
+    val isEmailVerified: Boolean = false,
+    val registrationError: String? = null,
+    val phoneOtpError: String? = null,
+    val emailVerificationError: String? = null,
+    val simulatedSmsOtp: String? = null,
+    val simulatedEmailCode: String? = null,
+    val authSuccessMessage: String? = null,
+
     // Current User Profile & Cloudinary Image Upload
     val currentUserProfile: UserProfile = VeloraData.currentUser,
     val isUploadingPhoto: Boolean = false,
@@ -70,13 +83,42 @@ data class VeloraUiState(
     val activePlan: SubscriptionPlan? = null,
     val superLikesRemaining: Int = 3,
     val boostMinutesRemaining: Int = 0,
-    val toastMessage: String? = null
+    val toastMessage: String? = null,
+
+    // Bangladeshi MFS Payments & Pricing State
+    val subscriptionPlans: List<SubscriptionPlan> = VeloraData.subscriptionPlans,
+    val mfsConfig: com.example.server.MfsMerchantConfig = com.example.server.MfsMerchantConfig(),
+    val mfsTransactions: List<com.example.server.MfsPaymentTransaction> = emptyList(),
+    val isCheckoutSheetOpen: Boolean = false,
+    val selectedCheckoutPlan: SubscriptionPlan? = null,
+    val selectedPaymentMethod: String = "BKASH", // "BKASH", "NAGAD", "CARD"
+    val mfsSenderPhone: String = "01712-345678",
+    val mfsTrxId: String = "",
+    val isPaymentProcessing: Boolean = false,
+    val paymentSuccessDialogVisible: Boolean = false,
+    val paymentSuccessMessage: String? = null
 )
+
 
 class VeloraViewModel : ViewModel() {
 
     private val _uiState = MutableStateFlow(VeloraUiState())
     val uiState: StateFlow<VeloraUiState> = _uiState.asStateFlow()
+
+    init {
+        loadMfsConfigAndPlans()
+    }
+
+    fun loadMfsConfigAndPlans() {
+        val config = VeloraBackendServer.getMfsConfig().data ?: com.example.server.MfsMerchantConfig()
+        val plans = VeloraBackendServer.getSubscriptionPlans().data ?: VeloraData.subscriptionPlans
+        _uiState.update {
+            it.copy(
+                mfsConfig = config,
+                subscriptionPlans = plans
+            )
+        }
+    }
 
     fun navigateTo(screen: Screen) {
         if (screen == Screen.ADMIN_PANEL) {
@@ -176,6 +218,9 @@ class VeloraViewModel : ViewModel() {
             val usersResponse = VeloraBackendServer.getAdminUsers(authHeader)
             val reportsResponse = VeloraBackendServer.getAdminReports(authHeader)
             val adminsResponse = VeloraBackendServer.getAdminAccounts(authHeader)
+            val mfsTxnsResponse = VeloraBackendServer.getMfsTransactions(authHeader)
+            val mfsConfigResponse = VeloraBackendServer.getMfsConfig()
+            val plansResponse = VeloraBackendServer.getSubscriptionPlans()
 
             val loggedInAdmin = adminsResponse.data?.firstOrNull { it.email.equals(email, ignoreCase = true) }
 
@@ -186,12 +231,16 @@ class VeloraViewModel : ViewModel() {
                     currentAdminEmail = email,
                     currentAdminDisplayName = loggedInAdmin?.displayName ?: "Administrator",
                     authorizedAdminsList = adminsResponse.data.orEmpty(),
+                    mfsTransactions = mfsTxnsResponse.data.orEmpty(),
+                    mfsConfig = mfsConfigResponse.data ?: it.mfsConfig,
+                    subscriptionPlans = plansResponse.data ?: it.subscriptionPlans,
                     adminLoginError = null,
                     profiles = usersResponse.data ?: it.profiles,
                     reports = reportsResponse.data ?: it.reports,
                     currentScreen = Screen.ADMIN_PANEL
                 )
             }
+
             showToast("Server Verified Admin Access (${loggedInAdmin?.displayName ?: email}). Welcome to /admin.")
         }
     }
@@ -224,7 +273,10 @@ class VeloraViewModel : ViewModel() {
                 Screen.ADMIN_LOGIN -> Screen.MAIN_DISCOVER
                 Screen.ADMIN_PANEL -> Screen.MAIN_DISCOVER
                 Screen.LANGUAGE_SELECTION -> Screen.SPLASH
-                Screen.AGE_VERIFICATION -> Screen.WELCOME
+                Screen.REGISTRATION -> Screen.WELCOME
+                Screen.PHONE_OTP_VERIFICATION -> Screen.REGISTRATION
+                Screen.EMAIL_VERIFICATION -> Screen.PHONE_OTP_VERIFICATION
+                Screen.AGE_VERIFICATION -> Screen.EMAIL_VERIFICATION
                 Screen.WELCOME -> Screen.SPLASH
                 else -> it.previousScreen
             }
@@ -236,18 +288,226 @@ class VeloraViewModel : ViewModel() {
         _uiState.update { it.copy(selectedLanguage = langCode) }
     }
 
-    fun verifyAge(is18Plus: Boolean) {
-        if (is18Plus) {
+    /**
+     * Registers a new user. Enforces phone OTP verification and email verification.
+     */
+    fun registerNewUser(name: String, email: String, phone: String, pass: String) {
+        viewModelScope.launch {
+            val response = VeloraBackendServer.registerNewUser(name, email, phone, pass)
+            if (!response.isSuccessful || response.data == null) {
+                _uiState.update {
+                    it.copy(
+                        registrationError = response.message,
+                        authSuccessMessage = null
+                    )
+                }
+                return@launch
+            }
+
+            val user = response.data
+            val pendingPhoneOtp = VeloraBackendServer.getPendingPhoneOtp(user.phone)
+            val pendingEmailCode = VeloraBackendServer.getPendingEmailCode(user.email)
+
             _uiState.update {
                 it.copy(
-                    isAgeVerified = true,
-                    isLoggedIn = true,
-                    currentScreen = Screen.MAIN_DISCOVER
+                    pendingAuthName = user.displayName,
+                    pendingAuthEmail = user.email,
+                    pendingAuthPhone = user.phone,
+                    isPhoneVerified = false,
+                    isEmailVerified = false,
+                    simulatedSmsOtp = pendingPhoneOtp,
+                    simulatedEmailCode = pendingEmailCode,
+                    registrationError = null,
+                    phoneOtpError = null,
+                    emailVerificationError = null,
+                    authSuccessMessage = "Account created! Step 1 of 2: Verify Phone Number via OTP.",
+                    currentScreen = Screen.PHONE_OTP_VERIFICATION
                 )
             }
-        } else {
-            showToast("You must be 18 or older to use Velora.")
+            showToast("Account created. Please enter the OTP sent to your phone.")
         }
+    }
+
+    /**
+     * Request/Resend phone OTP code.
+     */
+    fun sendPhoneOtp(targetPhone: String? = null) {
+        viewModelScope.launch {
+            val phone = targetPhone ?: _uiState.value.pendingAuthPhone
+            if (phone.isBlank()) {
+                _uiState.update { it.copy(phoneOtpError = "Phone number is missing.") }
+                return@launch
+            }
+
+            val response = VeloraBackendServer.sendPhoneOtp(phone)
+            if (response.isSuccessful) {
+                _uiState.update {
+                    it.copy(
+                        simulatedSmsOtp = response.data,
+                        phoneOtpError = null,
+                        authSuccessMessage = "New OTP sent to $phone"
+                    )
+                }
+                showToast("New OTP sent to $phone")
+            } else {
+                _uiState.update { it.copy(phoneOtpError = response.message) }
+            }
+        }
+    }
+
+    /**
+     * Submit and verify phone OTP.
+     */
+    fun verifyPhoneOtp(otpCode: String) {
+        viewModelScope.launch {
+            val phone = _uiState.value.pendingAuthPhone
+            val response = VeloraBackendServer.verifyPhoneOtp(phone, otpCode)
+            if (response.isSuccessful) {
+                _uiState.update {
+                    it.copy(
+                        isPhoneVerified = true,
+                        phoneOtpError = null,
+                        authSuccessMessage = "Phone verified! Step 2 of 2: Verify Email Address.",
+                        currentScreen = Screen.EMAIL_VERIFICATION
+                    )
+                }
+                showToast("Phone verified! Please verify your email address.")
+            } else {
+                _uiState.update {
+                    it.copy(phoneOtpError = response.message)
+                }
+            }
+        }
+    }
+
+    /**
+     * Request/Resend email verification code.
+     */
+    fun sendEmailVerification(targetEmail: String? = null) {
+        viewModelScope.launch {
+            val email = targetEmail ?: _uiState.value.pendingAuthEmail
+            if (email.isBlank()) {
+                _uiState.update { it.copy(emailVerificationError = "Email address is missing.") }
+                return@launch
+            }
+
+            val response = VeloraBackendServer.sendEmailVerification(email)
+            if (response.isSuccessful) {
+                _uiState.update {
+                    it.copy(
+                        simulatedEmailCode = response.data,
+                        emailVerificationError = null,
+                        authSuccessMessage = "New verification code sent to $email"
+                    )
+                }
+                showToast("Verification code sent to $email")
+            } else {
+                _uiState.update { it.copy(emailVerificationError = response.message) }
+            }
+        }
+    }
+
+    /**
+     * Submit and verify email verification code.
+     */
+    fun verifyEmailCode(code: String) {
+        viewModelScope.launch {
+            val email = _uiState.value.pendingAuthEmail
+            val response = VeloraBackendServer.verifyEmailCode(email, code)
+            if (response.isSuccessful) {
+                _uiState.update {
+                    it.copy(
+                        isEmailVerified = true,
+                        emailVerificationError = null,
+                        authSuccessMessage = "Email verified! Please complete age verification.",
+                        currentScreen = Screen.AGE_VERIFICATION
+                    )
+                }
+                showToast("Email verified successfully!")
+            } else {
+                _uiState.update {
+                    it.copy(emailVerificationError = response.message)
+                }
+            }
+        }
+    }
+
+    /**
+     * Authenticate standard user and verify phone/email before granting access.
+     */
+    fun loginUser(email: String, pass: String) {
+        viewModelScope.launch {
+            val response = VeloraBackendServer.login(email, pass)
+            if (response.isSuccessful) {
+                _uiState.update {
+                    it.copy(
+                        isLoggedIn = true,
+                        isPhoneVerified = true,
+                        isEmailVerified = true,
+                        isAgeVerified = true,
+                        pendingAuthEmail = email,
+                        currentScreen = Screen.MAIN_DISCOVER
+                    )
+                }
+                showToast("Welcome back!")
+            } else if (response.error == "PHONE_NOT_VERIFIED") {
+                _uiState.update {
+                    it.copy(
+                        pendingAuthEmail = email,
+                        isPhoneVerified = false,
+                        phoneOtpError = response.message,
+                        currentScreen = Screen.PHONE_OTP_VERIFICATION
+                    )
+                }
+                showToast("Phone verification required before accessing the app.")
+            } else if (response.error == "EMAIL_NOT_VERIFIED") {
+                _uiState.update {
+                    it.copy(
+                        pendingAuthEmail = email,
+                        isEmailVerified = false,
+                        emailVerificationError = response.message,
+                        currentScreen = Screen.EMAIL_VERIFICATION
+                    )
+                }
+                showToast("Email verification required before accessing the app.")
+            } else {
+                showToast("Login failed: ${response.message}")
+            }
+        }
+    }
+
+    /**
+     * Enforce that Phone OTP, Email, and 18+ Age verification are all complete
+     * before entering MAIN_DISCOVER.
+     */
+    fun verifyAge(is18Plus: Boolean) {
+        if (!is18Plus) {
+            showToast("You must be 18 or older to use Velora.")
+            return
+        }
+
+        val state = _uiState.value
+        // Verify phone OTP completed
+        if (!state.isPhoneVerified) {
+            showToast("Phone OTP verification must be completed first.")
+            _uiState.update { it.copy(currentScreen = Screen.PHONE_OTP_VERIFICATION) }
+            return
+        }
+        // Verify email address verified
+        if (!state.isEmailVerified) {
+            showToast("Email address verification must be completed first.")
+            _uiState.update { it.copy(currentScreen = Screen.EMAIL_VERIFICATION) }
+            return
+        }
+
+        _uiState.update {
+            it.copy(
+                isAgeVerified = true,
+                isLoggedIn = true,
+                currentScreen = Screen.MAIN_DISCOVER
+            )
+        }
+        showToast("Verification complete! Welcome to Velora.")
     }
 
     fun quickLogin() {
@@ -255,6 +515,8 @@ class VeloraViewModel : ViewModel() {
             it.copy(
                 isLoggedIn = true,
                 isAgeVerified = true,
+                isPhoneVerified = true,
+                isEmailVerified = true,
                 currentScreen = Screen.MAIN_DISCOVER
             )
         }
@@ -466,6 +728,117 @@ class VeloraViewModel : ViewModel() {
     }
 
     fun purchaseSubscription(plan: SubscriptionPlan) {
+        openCheckout(plan)
+    }
+
+    fun openCheckout(plan: SubscriptionPlan) {
+        val defaultPhone = _uiState.value.pendingAuthPhone.ifBlank {
+            _uiState.value.currentUserProfile.phone.ifBlank { "01712-345678" }
+        }
+        _uiState.update {
+            it.copy(
+                isCheckoutSheetOpen = true,
+                selectedCheckoutPlan = plan,
+                mfsSenderPhone = defaultPhone,
+                mfsTrxId = "",
+                isPaymentProcessing = false
+            )
+        }
+    }
+
+    fun closeCheckout() {
+        _uiState.update {
+            it.copy(
+                isCheckoutSheetOpen = false,
+                isPaymentProcessing = false
+            )
+        }
+    }
+
+    fun setPaymentMethod(method: String) {
+        _uiState.update { it.copy(selectedPaymentMethod = method) }
+    }
+
+    fun setMfsSenderPhone(phone: String) {
+        _uiState.update { it.copy(mfsSenderPhone = phone) }
+    }
+
+    fun setMfsTrxId(trxId: String) {
+        _uiState.update { it.copy(mfsTrxId = trxId) }
+    }
+
+    fun dismissPaymentSuccessDialog() {
+        _uiState.update {
+            it.copy(
+                paymentSuccessDialogVisible = false,
+                paymentSuccessMessage = null
+            )
+        }
+    }
+
+    /**
+     * Submit MFS payment (bKash / Nagad / Card) and automatically verify & activate subscription.
+     */
+    fun submitMfsPayment(
+        method: String,
+        senderPhone: String,
+        trxId: String,
+        plan: SubscriptionPlan
+    ) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isPaymentProcessing = true) }
+
+            val cleanPhone = senderPhone.trim()
+            val cleanTrxId = trxId.trim()
+
+            if (cleanTrxId.length < 6) {
+                _uiState.update { it.copy(isPaymentProcessing = false) }
+                showToast("Please enter a valid Transaction ID (TrxID) with at least 6 characters.")
+                return@launch
+            }
+
+            val userToken = com.example.server.ServerTokenManager.createToken(
+                userId = _uiState.value.currentUserProfile.id,
+                email = _uiState.value.pendingAuthEmail.ifBlank { _uiState.value.currentUserProfile.email.ifBlank { "alif@example.com" } },
+                role = com.example.server.Role.USER
+            )
+
+            val response = VeloraBackendServer.verifyPaymentAndGrantPremium(
+                authHeader = "Bearer $userToken",
+                paymentRequest = com.example.server.PaymentVerificationRequest(
+                    planId = plan.id,
+                    transactionReceipt = cleanTrxId,
+                    amount = "${plan.priceBdt}",
+                    currency = "BDT",
+                    paymentMethod = method,
+                    senderAccount = cleanPhone
+                )
+            )
+
+            if (response.isSuccessful) {
+                // Subscription automatically activated upon transaction verification!
+                _uiState.update {
+                    it.copy(
+                        isPremiumUser = true,
+                        activePlan = plan,
+                        isCheckoutSheetOpen = false,
+                        isPaymentProcessing = false,
+                        paymentSuccessDialogVisible = true,
+                        paymentSuccessMessage = "Subscribed to ${plan.name}! ৳${plan.priceBdt} BDT paid via $method. TrxID: $cleanTrxId.",
+                        superLikesRemaining = it.superLikesRemaining + 10,
+                        boostMinutesRemaining = it.boostMinutesRemaining + 30
+                    )
+                }
+                showToast("Payment verified via $method! Premium activated! 👑")
+                loadMfsConfigAndPlans()
+            } else {
+                _uiState.update { it.copy(isPaymentProcessing = false) }
+                showToast("Payment verification failed: ${response.message}")
+            }
+        }
+    }
+
+    fun purchaseSubscriptionDirect(plan: SubscriptionPlan, customTrxId: String? = null, method: String = "BKASH") {
         val userToken = com.example.server.ServerTokenManager.createToken(
             userId = "user_me",
             email = "alif@example.com",
@@ -475,9 +848,10 @@ class VeloraViewModel : ViewModel() {
             authHeader = "Bearer $userToken",
             paymentRequest = com.example.server.PaymentVerificationRequest(
                 planId = plan.id,
-                transactionReceipt = "BKASH_TXN_${System.currentTimeMillis()}",
+                transactionReceipt = customTrxId ?: "BKASH_TXN_${System.currentTimeMillis()}",
                 amount = "৳ ${plan.priceBdt}",
-                currency = "BDT"
+                currency = "BDT",
+                paymentMethod = method
             )
         )
         if (response.isSuccessful) {
@@ -493,6 +867,63 @@ class VeloraViewModel : ViewModel() {
             showToast("Payment verification failed: ${response.message}")
         }
     }
+
+    /**
+     * Admin: Update bKash and Nagad credentials/merchant numbers and enable/disable states.
+     */
+    fun adminUpdateMfsConfig(config: com.example.server.MfsMerchantConfig) {
+        viewModelScope.launch {
+            val token = _uiState.value.adminSessionToken
+            if (token.isNullOrBlank()) {
+                showToast("Admin session token required.")
+                return@launch
+            }
+            val response = VeloraBackendServer.updateMfsConfig("Bearer $token", config)
+            if (response.isSuccessful) {
+                _uiState.update { it.copy(mfsConfig = response.data ?: config) }
+                showToast("MFS Merchant settings updated (bKash & Nagad).")
+            } else {
+                showToast("Failed to update MFS settings: ${response.message}")
+            }
+        }
+    }
+
+    /**
+     * Admin: Set package price in BDT.
+     */
+    fun adminUpdatePlanPrice(planId: String, newPriceBdt: Int) {
+        viewModelScope.launch {
+            val token = _uiState.value.adminSessionToken
+            if (token.isNullOrBlank()) {
+                showToast("Admin session token required.")
+                return@launch
+            }
+            val response = VeloraBackendServer.updateSubscriptionPlanPrice("Bearer $token", planId, newPriceBdt)
+            if (response.isSuccessful) {
+                val plansResponse = VeloraBackendServer.getSubscriptionPlans()
+                _uiState.update {
+                    it.copy(subscriptionPlans = plansResponse.data ?: it.subscriptionPlans)
+                }
+                showToast("Plan '$planId' price updated to ৳$newPriceBdt BDT.")
+            } else {
+                showToast("Failed to update plan price: ${response.message}")
+            }
+        }
+    }
+
+    /**
+     * Admin: Reload MFS transactions history.
+     */
+    fun adminLoadMfsTransactions() {
+        viewModelScope.launch {
+            val token = _uiState.value.adminSessionToken ?: return@launch
+            val response = VeloraBackendServer.getMfsTransactions("Bearer $token")
+            if (response.isSuccessful) {
+                _uiState.update { it.copy(mfsTransactions = response.data.orEmpty()) }
+            }
+        }
+    }
+
 
     fun activateBoost() {
         _uiState.update {

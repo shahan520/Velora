@@ -297,9 +297,23 @@ fun PremiumSubscriptionScreen(
     plans: List<SubscriptionPlan> = VeloraData.subscriptionPlans,
     isAlreadyPremium: Boolean,
     onSubscribe: (SubscriptionPlan) -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    mfsConfig: com.example.server.MfsMerchantConfig = com.example.server.MfsMerchantConfig(),
+    onSubmitMfsPayment: ((method: String, senderPhone: String, trxId: String, plan: SubscriptionPlan) -> Unit)? = null,
+    isPaymentProcessing: Boolean = false,
+    paymentSuccessDialogVisible: Boolean = false,
+    paymentSuccessMessage: String? = null,
+    onDismissPaymentSuccess: () -> Unit = {}
 ) {
     var selectedPlan by remember { mutableStateOf(plans.firstOrNull { it.isPopular } ?: plans.first()) }
+    var showCheckoutDialog by remember { mutableStateOf(false) }
+
+    // Update selectedPlan if plans change
+    LaunchedEffect(plans) {
+        if (plans.isNotEmpty() && plans.none { it.id == selectedPlan.id }) {
+            selectedPlan = plans.first()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -325,7 +339,13 @@ fun PremiumSubscriptionScreen(
                         .padding(16.dp)
                 ) {
                     Button(
-                        onClick = { onSubscribe(selectedPlan) },
+                        onClick = {
+                            if (onSubmitMfsPayment != null) {
+                                showCheckoutDialog = true
+                            } else {
+                                onSubscribe(selectedPlan)
+                            }
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(54.dp)
@@ -334,7 +354,7 @@ fun PremiumSubscriptionScreen(
                         shape = RoundedCornerShape(27.dp)
                     ) {
                         Text(
-                            text = if (isAlreadyPremium) "Manage Plan" else "Subscribe Now • ৳${selectedPlan.priceBdt}",
+                            text = if (isAlreadyPremium) "Manage Plan" else "Subscribe Now • ৳${selectedPlan.priceBdt} BDT",
                             fontWeight = FontWeight.Bold,
                             color = Color.White,
                             fontSize = 16.sp
@@ -380,13 +400,71 @@ fun PremiumSubscriptionScreen(
             Spacer(modifier = Modifier.height(4.dp))
 
             Text(
-                text = "Unlock more features and get the best dating experience",
+                text = "Unlock unlimited likes, VIP features & real matches in Bangladesh",
                 fontSize = 13.sp,
                 color = VeloraLavender,
                 textAlign = TextAlign.Center
             )
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Bangladeshi MFS Accepted Banner
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = VeloraPlumSurface,
+                border = androidx.compose.foundation.BorderStroke(1.dp, VeloraPink.copy(alpha = 0.4f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Payment,
+                            contentDescription = "MFS",
+                            tint = VeloraPink,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Bangladeshi Payments Supported",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = Color(0xFFE2136E)
+                        ) {
+                            Text(
+                                text = "bKash",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = Color(0xFFF7931E)
+                        ) {
+                            Text(
+                                text = "Nagad",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
 
             // Benefits Checklist
             Card(
@@ -427,7 +505,7 @@ fun PremiumSubscriptionScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Pricing Plans Selector
+            // Pricing Plans Selector with BDT Currency
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -478,13 +556,342 @@ fun PremiumSubscriptionScreen(
                                 fontWeight = FontWeight.Black,
                                 color = VeloraPinkLight
                             )
+                            Text(
+                                text = "BDT",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = VeloraLavender
+                            )
                         }
                     }
                 }
             }
         }
     }
+
+    // Checkout Sheet Modal
+    if (showCheckoutDialog) {
+        MfsCheckoutDialog(
+            plan = selectedPlan,
+            mfsConfig = mfsConfig,
+            isProcessing = isPaymentProcessing,
+            onConfirmPayment = { method, phone, trxId ->
+                if (onSubmitMfsPayment != null) {
+                    onSubmitMfsPayment(method, phone, trxId, selectedPlan)
+                } else {
+                    onSubscribe(selectedPlan)
+                }
+                showCheckoutDialog = false
+            },
+            onDismiss = { showCheckoutDialog = false }
+        )
+    }
+
+    // Payment Success Alert
+    if (paymentSuccessDialogVisible && !paymentSuccessMessage.isNullOrBlank()) {
+        AlertDialog(
+            onDismissRequest = onDismissPaymentSuccess,
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.CheckCircle,
+                    contentDescription = "Success",
+                    tint = VeloraOnlineGreen,
+                    modifier = Modifier.size(48.dp)
+                )
+            },
+            title = {
+                Text("Subscription Activated!", fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Text(paymentSuccessMessage, fontSize = 14.sp)
+            },
+            confirmButton = {
+                Button(
+                    onClick = onDismissPaymentSuccess,
+                    colors = ButtonDefaults.buttonColors(containerColor = VeloraPink),
+                    modifier = Modifier.testTag("dismiss_payment_success_button")
+                ) {
+                    Text("Awesome!", color = Color.White)
+                }
+            }
+        )
+    }
 }
+
+@Composable
+fun MfsCheckoutDialog(
+    plan: SubscriptionPlan,
+    mfsConfig: com.example.server.MfsMerchantConfig,
+    isProcessing: Boolean,
+    onConfirmPayment: (method: String, senderPhone: String, trxId: String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var selectedMethod by remember {
+        mutableStateOf(if (mfsConfig.bKashEnabled) "BKASH" else if (mfsConfig.nagadEnabled) "NAGAD" else "CARD")
+    }
+    var senderPhone by remember { mutableStateOf("01712-345678") }
+    var trxIdInput by remember { mutableStateOf("") }
+    var inputError by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Checkout", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = VeloraPinkSoft
+                ) {
+                    Text(
+                        text = "৳ ${plan.priceBdt} BDT",
+                        color = VeloraPink,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 14.sp,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Select Payment Method",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = VeloraTextSecondary
+                )
+
+                // Method Selector Chips (bKash, Nagad, Card)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // bKash Button
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (selectedMethod == "BKASH") Color(0xFFFDE8F1) else MaterialTheme.colorScheme.surface,
+                        border = androidx.compose.foundation.BorderStroke(
+                            if (selectedMethod == "BKASH") 2.dp else 1.dp,
+                            if (selectedMethod == "BKASH") Color(0xFFE2136E) else VeloraCardBorder
+                        ),
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable(enabled = mfsConfig.bKashEnabled) {
+                                selectedMethod = "BKASH"
+                            }
+                            .testTag("select_method_bkash")
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "bKash",
+                                fontWeight = FontWeight.Black,
+                                color = if (mfsConfig.bKashEnabled) Color(0xFFE2136E) else Color.Gray,
+                                fontSize = 14.sp
+                            )
+                            Text(
+                                text = if (mfsConfig.bKashEnabled) "বিকাশ" else "Disabled",
+                                fontSize = 10.sp,
+                                color = if (mfsConfig.bKashEnabled) Color(0xFFE2136E) else Color.Gray
+                            )
+                        }
+                    }
+
+                    // Nagad Button
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (selectedMethod == "NAGAD") Color(0xFFFEF4E8) else MaterialTheme.colorScheme.surface,
+                        border = androidx.compose.foundation.BorderStroke(
+                            if (selectedMethod == "NAGAD") 2.dp else 1.dp,
+                            if (selectedMethod == "NAGAD") Color(0xFFF7931E) else VeloraCardBorder
+                        ),
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable(enabled = mfsConfig.nagadEnabled) {
+                                selectedMethod = "NAGAD"
+                            }
+                            .testTag("select_method_nagad")
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "Nagad",
+                                fontWeight = FontWeight.Black,
+                                color = if (mfsConfig.nagadEnabled) Color(0xFFF7931E) else Color.Gray,
+                                fontSize = 14.sp
+                            )
+                            Text(
+                                text = if (mfsConfig.nagadEnabled) "নগদ" else "Disabled",
+                                fontSize = 10.sp,
+                                color = if (mfsConfig.nagadEnabled) Color(0xFFF7931E) else Color.Gray
+                            )
+                        }
+                    }
+
+                    // Card Button
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (selectedMethod == "CARD") VeloraLavenderLight else MaterialTheme.colorScheme.surface,
+                        border = androidx.compose.foundation.BorderStroke(
+                            if (selectedMethod == "CARD") 2.dp else 1.dp,
+                            if (selectedMethod == "CARD") VeloraViolet else VeloraCardBorder
+                        ),
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { selectedMethod = "CARD" }
+                            .testTag("select_method_card")
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "Card",
+                                fontWeight = FontWeight.Bold,
+                                color = VeloraViolet,
+                                fontSize = 14.sp
+                            )
+                            Text(
+                                text = "Debit/Credit",
+                                fontSize = 10.sp,
+                                color = VeloraTextMuted
+                            )
+                        }
+                    }
+                }
+
+                // Instructions Card
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = when (selectedMethod) {
+                        "BKASH" -> Color(0xFFFDF0F5)
+                        "NAGAD" -> Color(0xFFFFF7ED)
+                        else -> MaterialTheme.colorScheme.surfaceVariant
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        val merchantNum = if (selectedMethod == "BKASH") mfsConfig.bKashMerchantNumber else mfsConfig.nagadMerchantNumber
+                        val merchantType = if (selectedMethod == "BKASH") mfsConfig.bKashMerchantType else mfsConfig.nagadMerchantType
+                        val methodTitle = if (selectedMethod == "BKASH") "bKash Merchant Payment" else if (selectedMethod == "NAGAD") "Nagad Payment" else "Card Payment"
+
+                        Text(
+                            text = methodTitle,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            color = if (selectedMethod == "BKASH") Color(0xFFE2136E) else if (selectedMethod == "NAGAD") Color(0xFFF7931E) else VeloraViolet
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        if (selectedMethod != "CARD") {
+                            Text("1. Send ৳${plan.priceBdt} BDT via $selectedMethod ($merchantType)", fontSize = 12.sp)
+                            Text("2. Merchant Number: $merchantNum (Counter: ${mfsConfig.merchantCounter})", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text("3. Enter your account number and TrxID below to automatically activate.", fontSize = 12.sp)
+                        } else {
+                            Text("Instant card processing in BDT (৳${plan.priceBdt}). Enter reference / TrxID below.", fontSize = 12.sp)
+                        }
+                    }
+                }
+
+                if (!inputError.isNullOrBlank()) {
+                    Text(inputError!!, color = Color.Red, fontSize = 12.sp)
+                }
+
+                // Phone Input
+                OutlinedTextField(
+                    value = senderPhone,
+                    onValueChange = { senderPhone = it },
+                    label = { Text("Sender Phone Number") },
+                    placeholder = { Text("01XXXXXXXXX") },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("mfs_phone_input")
+                )
+
+                // TrxID Input
+                OutlinedTextField(
+                    value = trxIdInput,
+                    onValueChange = {
+                        trxIdInput = it.uppercase()
+                        inputError = null
+                    },
+                    label = { Text("Transaction ID (TrxID)") },
+                    placeholder = { Text("e.g. BKH89X201A") },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("mfs_trxid_input")
+                )
+
+                // Fast Simulation Button for Instant Testing
+                OutlinedButton(
+                    onClick = {
+                        val prefix = if (selectedMethod == "NAGAD") "NGD" else if (selectedMethod == "CARD") "CRD" else "BKH"
+                        val randomSuffix = (100000..999999).random().toString()
+                        trxIdInput = "$prefix$randomSuffix"
+                        inputError = null
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("simulate_trxid_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Bolt,
+                        contentDescription = "Simulate",
+                        tint = VeloraPink,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Auto-Generate Test TrxID", fontSize = 12.sp)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (trxIdInput.trim().length < 6) {
+                        inputError = "Please enter a valid TrxID with at least 6 characters."
+                        return@Button
+                    }
+                    onConfirmPayment(selectedMethod, senderPhone, trxIdInput)
+                },
+                enabled = !isProcessing && trxIdInput.isNotBlank(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (selectedMethod == "BKASH") Color(0xFFE2136E) else if (selectedMethod == "NAGAD") Color(0xFFF7931E) else VeloraPink
+                ),
+                modifier = Modifier.testTag("confirm_mfs_payment_button")
+            ) {
+                if (isProcessing) {
+                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                Text("Confirm & Activate", color = Color.White, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.testTag("cancel_checkout_button")
+            ) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
 
 @Composable
 fun BoostStoreScreen(

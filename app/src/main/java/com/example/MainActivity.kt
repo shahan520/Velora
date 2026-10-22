@@ -109,21 +109,53 @@ fun VeloraAppRoot(viewModel: VeloraViewModel) {
             when (uiState.currentScreen) {
                 Screen.SPLASH -> {
                     SplashScreen(
-                        onGetStarted = { viewModel.navigateTo(Screen.WELCOME) },
+                        onGetStarted = { viewModel.navigateTo(Screen.REGISTRATION) },
                         onLoginClick = { viewModel.navigateTo(Screen.WELCOME) },
                         onLanguageClick = { viewModel.navigateTo(Screen.LANGUAGE_SELECTION) },
-                        currentLanguage = uiState.selectedLanguage,
-                        onAdminRouteClick = { viewModel.handleRoute("/admin") }
+                        currentLanguage = uiState.selectedLanguage
                     )
                 }
 
                 Screen.WELCOME -> {
                     WelcomeScreen(
-                        onContinueGoogle = { viewModel.navigateTo(Screen.AGE_VERIFICATION) },
-                        onContinuePhone = { viewModel.navigateTo(Screen.AGE_VERIFICATION) },
-                        onContinueEmail = { viewModel.navigateTo(Screen.AGE_VERIFICATION) },
+                        onContinueGoogle = { viewModel.quickLogin() },
+                        onContinuePhone = { viewModel.navigateTo(Screen.REGISTRATION) },
+                        onContinueEmail = { viewModel.navigateTo(Screen.REGISTRATION) },
                         onSelectLanguage = { viewModel.navigateTo(Screen.LANGUAGE_SELECTION) },
                         currentLanguage = uiState.selectedLanguage
+                    )
+                }
+
+                Screen.REGISTRATION -> {
+                    RegistrationScreen(
+                        onRegister = { name, email, phone, pass ->
+                            viewModel.registerNewUser(name, email, phone, pass)
+                        },
+                        onNavigateToLogin = { viewModel.navigateTo(Screen.WELCOME) },
+                        errorMessage = uiState.registrationError,
+                        onBack = { viewModel.navigateBack() }
+                    )
+                }
+
+                Screen.PHONE_OTP_VERIFICATION -> {
+                    PhoneOtpVerificationScreen(
+                        phoneNumber = uiState.pendingAuthPhone.ifBlank { "+880 1812-345678" },
+                        simulatedOtp = uiState.simulatedSmsOtp,
+                        onVerifyOtp = { otp -> viewModel.verifyPhoneOtp(otp) },
+                        onResendOtp = { viewModel.sendPhoneOtp() },
+                        errorMessage = uiState.phoneOtpError,
+                        onBack = { viewModel.navigateBack() }
+                    )
+                }
+
+                Screen.EMAIL_VERIFICATION -> {
+                    EmailVerificationScreen(
+                        email = uiState.pendingAuthEmail.ifBlank { "user@example.com" },
+                        simulatedCode = uiState.simulatedEmailCode,
+                        onVerifyEmail = { code -> viewModel.verifyEmailCode(code) },
+                        onResendEmail = { viewModel.sendEmailVerification() },
+                        errorMessage = uiState.emailVerificationError,
+                        onBack = { viewModel.navigateBack() }
                     )
                 }
 
@@ -263,11 +295,21 @@ fun VeloraAppRoot(viewModel: VeloraViewModel) {
 
                 Screen.PREMIUM_STORE -> {
                     PremiumSubscriptionScreen(
+                        plans = uiState.subscriptionPlans,
                         isAlreadyPremium = uiState.isPremiumUser,
                         onSubscribe = { plan -> viewModel.purchaseSubscription(plan) },
-                        onBack = { viewModel.navigateBack() }
+                        onBack = { viewModel.navigateBack() },
+                        mfsConfig = uiState.mfsConfig,
+                        onSubmitMfsPayment = { method, phone, trxId, plan ->
+                            viewModel.submitMfsPayment(method, phone, trxId, plan)
+                        },
+                        isPaymentProcessing = uiState.isPaymentProcessing,
+                        paymentSuccessDialogVisible = uiState.paymentSuccessDialogVisible,
+                        paymentSuccessMessage = uiState.paymentSuccessMessage,
+                        onDismissPaymentSuccess = { viewModel.dismissPaymentSuccessDialog() }
                     )
                 }
+
 
                 Screen.BOOST_STORE -> {
                     BoostStoreScreen(
@@ -318,8 +360,14 @@ fun VeloraAppRoot(viewModel: VeloraViewModel) {
                             reports = uiState.reports,
                             onToggleSuspendUser = { userId -> viewModel.toggleUserSuspension(userId) },
                             onResolveReport = { repId, status -> viewModel.resolveReport(repId, status) },
-                            onExitAdmin = { viewModel.logoutAdmin() }
+                            onExitAdmin = { viewModel.logoutAdmin() },
+                            mfsConfig = uiState.mfsConfig,
+                            onUpdateMfsConfig = { cfg -> viewModel.adminUpdateMfsConfig(cfg) },
+                            subscriptionPlans = uiState.subscriptionPlans,
+                            onUpdatePlanPrice = { planId, price -> viewModel.adminUpdatePlanPrice(planId, price) },
+                            mfsTransactions = uiState.mfsTransactions
                         )
+
                     }
                 }
 
@@ -328,8 +376,7 @@ fun VeloraAppRoot(viewModel: VeloraViewModel) {
                         onGetStarted = { viewModel.navigateTo(Screen.WELCOME) },
                         onLoginClick = { viewModel.navigateTo(Screen.WELCOME) },
                         onLanguageClick = { viewModel.navigateTo(Screen.LANGUAGE_SELECTION) },
-                        currentLanguage = uiState.selectedLanguage,
-                        onAdminRouteClick = { viewModel.handleRoute("/admin") }
+                        currentLanguage = uiState.selectedLanguage
                     )
                 }
             }
