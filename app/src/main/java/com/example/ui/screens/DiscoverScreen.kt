@@ -260,7 +260,6 @@ fun DiscoverScreen(
                         onClick = onUndoPass,
                         size = 46.dp,
                         iconSize = 22.dp,
-                        backgroundColor = Color.White,
                         iconTint = VeloraGold,
                         testTag = "action_undo"
                     )
@@ -272,7 +271,6 @@ fun DiscoverScreen(
                         onClick = { onPass(currentProfile) },
                         size = 62.dp,
                         iconSize = 30.dp,
-                        backgroundColor = Color.White,
                         iconTint = VeloraPassRed,
                         elevation = 8.dp,
                         testTag = "action_pass"
@@ -285,7 +283,6 @@ fun DiscoverScreen(
                         onClick = { onSuperLike(currentProfile) },
                         size = 50.dp,
                         iconSize = 24.dp,
-                        backgroundColor = Color.White,
                         iconTint = VeloraSuperLikeStar,
                         testTag = "action_super_like"
                     )
@@ -478,7 +475,6 @@ fun ProfileDetailsScreen(
                         contentDescription = "Pass",
                         onClick = onPass,
                         size = 56.dp,
-                        backgroundColor = Color.White,
                         iconTint = VeloraPassRed,
                         testTag = "detail_pass"
                     )
@@ -488,7 +484,6 @@ fun ProfileDetailsScreen(
                         contentDescription = "Super Like",
                         onClick = onSuperLike,
                         size = 48.dp,
-                        backgroundColor = Color.White,
                         iconTint = VeloraSuperLikeStar,
                         testTag = "detail_super_like"
                     )

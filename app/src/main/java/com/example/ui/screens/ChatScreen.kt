@@ -34,6 +34,7 @@ fun ChatRoomScreen(
     match: MatchItem,
     messages: List<ChatMessage>,
     onSendMessage: (String) -> Unit,
+    onStartVoiceCall: () -> Unit = {},
     onStartVideoCall: () -> Unit,
     onBack: () -> Unit,
     onReportBlock: () -> Unit
@@ -79,7 +80,7 @@ fun ChatRoomScreen(
                                     .size(10.dp)
                                     .clip(CircleShape)
                                     .background(VeloraOnlineGreen)
-                                    .border(1.5.dp, Color.White, CircleShape)
+                                    .border(1.5.dp, MaterialTheme.colorScheme.surface, CircleShape)
                                     .align(Alignment.BottomEnd)
                             )
                         }
@@ -102,7 +103,7 @@ fun ChatRoomScreen(
                     }
 
                     IconButton(
-                        onClick = onStartVideoCall,
+                        onClick = onStartVoiceCall,
                         modifier = Modifier.testTag("voice_call_button")
                     ) {
                         Icon(Icons.Default.Call, contentDescription = "Audio Call", tint = VeloraPink)
@@ -216,7 +217,7 @@ private fun ChatBubble(message: ChatMessage) {
                 bottomStart = if (isMe) 18.dp else 4.dp,
                 bottomEnd = if (isMe) 4.dp else 18.dp
             ),
-            color = if (isMe) VeloraPink else Color.White,
+            color = if (isMe) VeloraPink else MaterialTheme.colorScheme.surface,
             shadowElevation = 1.dp,
             border = if (isMe) null else androidx.compose.foundation.BorderStroke(1.dp, VeloraCardBorder),
             modifier = Modifier.widthIn(max = 280.dp)

@@ -344,17 +344,18 @@ fun CircularActionButton(
     modifier: Modifier = Modifier,
     size: Dp = 60.dp,
     iconSize: Dp = 28.dp,
-    backgroundColor: Color = Color.White,
+    backgroundColor: Color = Color.Unspecified,
     iconTint: Color = VeloraPink,
     elevation: Dp = 6.dp,
     testTag: String
 ) {
+    val effectiveBg = if (backgroundColor != Color.Unspecified) backgroundColor else MaterialTheme.colorScheme.surface
     Box(
         modifier = modifier
             .size(size)
             .shadow(elevation, CircleShape)
             .clip(CircleShape)
-            .background(backgroundColor)
+            .background(effectiveBg)
             .clickable(onClick = onClick)
             .testTag(testTag),
         contentAlignment = Alignment.Center

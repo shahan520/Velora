@@ -224,7 +224,7 @@ private fun MatchCardItem(
                             .size(12.dp)
                             .clip(CircleShape)
                             .background(VeloraOnlineGreen)
-                            .border(2.dp, Color.White, CircleShape)
+                            .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape)
                             .align(Alignment.BottomEnd)
                     )
                 }

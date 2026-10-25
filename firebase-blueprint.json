@@ -1,0 +1,61 @@
+{
+  "entities": {
+    "UserProfile": {
+      "collection": "users",
+      "fields": {
+        "id": "String",
+        "name": "String",
+        "email": "String",
+        "phone": "String",
+        "role": "String",
+        "isVerified": "Boolean",
+        "isPremium": "Boolean",
+        "paymentStatus": "String",
+        "isSuspended": "Boolean",
+        "city": "String",
+        "country": "String",
+        "age": "Integer",
+        "gender": "String",
+        "aboutMe": "String",
+        "interests": "Array<String>",
+        "photos": "Array<String>",
+        "createdAt": "Timestamp",
+        "updatedAt": "Timestamp"
+      }
+    },
+    "UserReport": {
+      "collection": "reports",
+      "fields": {
+        "id": "String",
+        "reporterId": "String",
+        "reporterName": "String",
+        "reportedUserId": "String",
+        "reportedUserName": "String",
+        "reason": "String",
+        "status": "String",
+        "createdAt": "Timestamp"
+      }
+    },
+    "CallSession": {
+      "collection": "calls",
+      "fields": {
+        "id": "String",
+        "callerId": "String",
+        "callerName": "String",
+        "callerPhoto": "String",
+        "receiverId": "String",
+        "receiverName": "String",
+        "receiverPhoto": "String",
+        "callType": "String",
+        "status": "String",
+        "offerSdp": "String",
+        "answerSdp": "String",
+        "isAudioMuted": "Boolean",
+        "isVideoEnabled": "Boolean",
+        "durationSeconds": "Integer",
+        "createdAt": "Timestamp",
+        "endedAt": "Timestamp"
+      }
+    }
+  }
+}

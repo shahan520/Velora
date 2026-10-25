@@ -4,12 +4,16 @@ import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.data.CallSignalingRepository
+import com.example.data.FirebaseAuthRepository
 import com.example.data.FirestoreProfileRepository
 import com.example.data.VeloraData
+import com.example.media.CallMediaManager
 import com.example.model.*
 import com.example.server.VeloraBackendServer
 import com.example.service.CloudinaryUploadService
 import com.example.service.UploadResult
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -70,6 +74,12 @@ data class VeloraUiState(
     ),
     val isCallingActive: Boolean = false,
     val isCallMuted: Boolean = false,
+    val isSpeakerOn: Boolean = true,
+    val isVideoEnabled: Boolean = true,
+    val isFrontCamera: Boolean = true,
+    val activeCallSession: CallSession? = null,
+    val incomingCallSession: CallSession? = null,
+    val callDurationSeconds: Int = 0,
 
     // Notifications & Safety
     val notifications: List<NotificationItem> = VeloraData.initialNotifications,
@@ -105,8 +115,42 @@ class VeloraViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(VeloraUiState())
     val uiState: StateFlow<VeloraUiState> = _uiState.asStateFlow()
 
+    private var mediaManager: CallMediaManager? = null
+    private var callTimerJob: Job? = null
+    private var activeCallObserverJob: Job? = null
+    private var incomingCallObserverJob: Job? = null
+    private var initiateCallJob: Job? = null
+
     init {
         loadMfsConfigAndPlans()
+        startObservingIncomingCalls(_uiState.value.currentUserProfile.id)
+    }
+
+    fun bindMediaManager(context: Context) {
+        if (mediaManager == null) {
+            mediaManager = CallMediaManager(context.applicationContext)
+        }
+    }
+
+    fun getMediaManager(): CallMediaManager? = mediaManager
+
+    fun startObservingIncomingCalls(userId: String) {
+        incomingCallObserverJob?.cancel()
+        incomingCallObserverJob = viewModelScope.launch {
+            CallSignalingRepository.observeIncomingCalls(userId).collect { incoming ->
+                if (incoming != null && (incoming.status == CallStatus.RINGING || incoming.status == CallStatus.OFFERING)) {
+                    if (!_uiState.value.isCallingActive) {
+                        _uiState.update { it.copy(incomingCallSession = incoming) }
+                        mediaManager?.startRinging()
+                    }
+                } else {
+                    if (_uiState.value.incomingCallSession != null) {
+                        _uiState.update { it.copy(incomingCallSession = null) }
+                        mediaManager?.stopRinging()
+                    }
+                }
+            }
+        }
     }
 
     fun loadMfsConfigAndPlans() {
@@ -304,6 +348,9 @@ class VeloraViewModel : ViewModel() {
                 return@launch
             }
 
+            // Immediately create the account in Firebase Authentication & Cloud Firestore
+            FirebaseAuthRepository.registerAndSyncUser(name, email, phone, pass)
+
             val user = response.data
             val pendingPhoneOtp = VeloraBackendServer.getPendingPhoneOtp(user.phone)
             val pendingEmailCode = VeloraBackendServer.getPendingEmailCode(user.email)
@@ -324,7 +371,7 @@ class VeloraViewModel : ViewModel() {
                     currentScreen = Screen.PHONE_OTP_VERIFICATION
                 )
             }
-            showToast("Account created. Please enter the OTP sent to your phone.")
+            showToast("Account created in Firebase! Please verify your phone number.")
         }
     }
 
@@ -439,6 +486,9 @@ class VeloraViewModel : ViewModel() {
         viewModelScope.launch {
             val response = VeloraBackendServer.login(email, pass)
             if (response.isSuccessful) {
+                // Ensure the account exists and is synchronized with Firebase Auth & Cloud Firestore
+                FirebaseAuthRepository.loginAndSyncUser(email, pass)
+
                 _uiState.update {
                     it.copy(
                         isLoggedIn = true,
@@ -449,7 +499,7 @@ class VeloraViewModel : ViewModel() {
                         currentScreen = Screen.MAIN_DISCOVER
                     )
                 }
-                showToast("Welcome back!")
+                showToast("Welcome back! Connected to Firebase.")
             } else if (response.error == "PHONE_NOT_VERIFIED") {
                 _uiState.update {
                     it.copy(
@@ -511,14 +561,24 @@ class VeloraViewModel : ViewModel() {
     }
 
     fun quickLogin() {
-        _uiState.update {
-            it.copy(
-                isLoggedIn = true,
-                isAgeVerified = true,
-                isPhoneVerified = true,
-                isEmailVerified = true,
-                currentScreen = Screen.MAIN_DISCOVER
+        viewModelScope.launch {
+            // Synchronize with Firebase Auth & Cloud Firestore
+            FirebaseAuthRepository.registerAndSyncUser(
+                name = VeloraData.currentUser.name,
+                email = VeloraData.currentUser.email.ifBlank { "member@velora.com" },
+                phone = VeloraData.currentUser.phone.ifBlank { "01700000000" },
+                pass = "VeloraPass@123"
             )
+            _uiState.update {
+                it.copy(
+                    isLoggedIn = true,
+                    isAgeVerified = true,
+                    isPhoneVerified = true,
+                    isEmailVerified = true,
+                    currentScreen = Screen.MAIN_DISCOVER
+                )
+            }
+            showToast("Signed in! Firebase account synchronized.")
         }
     }
 
@@ -697,16 +757,232 @@ class VeloraViewModel : ViewModel() {
         }
     }
 
-    fun startVideoCall() {
-        _uiState.update { it.copy(isCallingActive = true, currentScreen = Screen.VIDEO_CALL) }
+    /**
+     * Initiates a real-time voice call to target match or active match.
+     */
+    fun startVoiceCall(targetMatch: MatchItem? = null) {
+        val match = targetMatch ?: _uiState.value.activeChatMatch ?: _uiState.value.matches.firstOrNull() ?: return
+        initiateRealTimeCall(match, CallType.AUDIO)
+    }
+
+    /**
+     * Initiates a real-time video call to target match or active match.
+     */
+    fun startVideoCall(targetMatch: MatchItem? = null) {
+        val match = targetMatch ?: _uiState.value.activeChatMatch ?: _uiState.value.matches.firstOrNull() ?: return
+        initiateRealTimeCall(match, CallType.VIDEO)
+    }
+
+    private fun initiateRealTimeCall(match: MatchItem, callType: CallType) {
+        val currentUser = _uiState.value.currentUserProfile
+        val initialSession = CallSession(
+            id = "call_${System.currentTimeMillis()}",
+            callerId = currentUser.id,
+            callerName = currentUser.name,
+            callerPhoto = currentUser.photos.firstOrNull() ?: "",
+            receiverId = match.user.id,
+            receiverName = match.user.name,
+            receiverPhoto = match.user.photos.firstOrNull() ?: "",
+            callType = callType,
+            status = CallStatus.RINGING,
+            offerSdp = "v=0...",
+            isAudioMuted = false,
+            isVideoEnabled = (callType == CallType.VIDEO),
+            isSpeakerOn = (callType == CallType.VIDEO),
+            createdAt = System.currentTimeMillis()
+        )
+        _uiState.update {
+            it.copy(
+                isCallingActive = true,
+                activeCallSession = initialSession,
+                callDurationSeconds = 0,
+                isCallMuted = false,
+                isSpeakerOn = (callType == CallType.VIDEO),
+                isVideoEnabled = (callType == CallType.VIDEO),
+                isFrontCamera = true,
+                currentScreen = Screen.VIDEO_CALL
+            )
+        }
+        mediaManager?.startCallAudio(enableSpeaker = (callType == CallType.VIDEO))
+
+        initiateCallJob?.cancel()
+        initiateCallJob = viewModelScope.launch {
+            val result = CallSignalingRepository.initiateCall(currentUser, match, callType)
+            val session = result.getOrNull()
+            if (session != null && _uiState.value.isCallingActive) {
+                _uiState.update { it.copy(activeCallSession = session) }
+                observeCallSession(session.id)
+            }
+        }
+    }
+
+    /**
+     * Observes real-time state changes on active call session.
+     */
+    private fun observeCallSession(callId: String) {
+        activeCallObserverJob?.cancel()
+        activeCallObserverJob = viewModelScope.launch {
+            CallSignalingRepository.observeCall(callId).collect { session ->
+                if (session != null) {
+                    _uiState.update { it.copy(activeCallSession = session) }
+                    when (session.status) {
+                        CallStatus.CONNECTED -> {
+                            mediaManager?.stopRinging()
+                            startCallDurationTimer()
+                        }
+                        CallStatus.ENDED, CallStatus.REJECTED -> {
+                            delay(1200)
+                            endActiveCall()
+                        }
+                        else -> {}
+                    }
+                }
+            }
+        }
+    }
+
+    private fun startCallDurationTimer() {
+        if (callTimerJob?.isActive == true) return
+        callTimerJob = viewModelScope.launch {
+            while (true) {
+                delay(1000)
+                _uiState.update { it.copy(callDurationSeconds = it.callDurationSeconds + 1) }
+            }
+        }
+    }
+
+    /**
+     * Accepts an incoming call session.
+     */
+    fun acceptIncomingCall() {
+        val incoming = _uiState.value.incomingCallSession ?: return
+        viewModelScope.launch {
+            mediaManager?.stopRinging()
+            CallSignalingRepository.acceptCall(incoming.id)
+            val connectedSession = incoming.copy(status = CallStatus.CONNECTED)
+            _uiState.update {
+                it.copy(
+                    incomingCallSession = null,
+                    isCallingActive = true,
+                    activeCallSession = connectedSession,
+                    callDurationSeconds = 0,
+                    isCallMuted = false,
+                    isSpeakerOn = (incoming.callType == CallType.VIDEO),
+                    isVideoEnabled = (incoming.callType == CallType.VIDEO),
+                    isFrontCamera = true,
+                    currentScreen = Screen.VIDEO_CALL
+                )
+            }
+            mediaManager?.startCallAudio(enableSpeaker = (incoming.callType == CallType.VIDEO))
+            startCallDurationTimer()
+            observeCallSession(incoming.id)
+        }
+    }
+
+    /**
+     * Declines or rejects an incoming call.
+     */
+    fun rejectIncomingCall() {
+        val incoming = _uiState.value.incomingCallSession ?: return
+        _uiState.update { it.copy(incomingCallSession = null) }
+        mediaManager?.stopRinging()
+        viewModelScope.launch {
+            CallSignalingRepository.rejectCall(incoming.id)
+        }
+    }
+
+    /**
+     * Ends current active call session.
+     */
+    fun endActiveCall() {
+        val activeCall = _uiState.value.activeCallSession
+        val duration = _uiState.value.callDurationSeconds
+        initiateCallJob?.cancel()
+        callTimerJob?.cancel()
+        activeCallObserverJob?.cancel()
+        _uiState.update {
+            it.copy(
+                isCallingActive = false,
+                activeCallSession = null,
+                callDurationSeconds = 0,
+                currentScreen = if (it.currentScreen == Screen.VIDEO_CALL) Screen.CHAT_ROOM else it.currentScreen
+            )
+        }
+        mediaManager?.cleanup()
+        viewModelScope.launch {
+            if (activeCall != null) {
+                CallSignalingRepository.endCall(activeCall.id, duration)
+            }
+        }
     }
 
     fun endVideoCall() {
-        _uiState.update { it.copy(isCallingActive = false, currentScreen = Screen.CHAT_ROOM) }
+        endActiveCall()
     }
 
     fun toggleCallMute() {
-        _uiState.update { it.copy(isCallMuted = !it.isCallMuted) }
+        val newMuted = !_uiState.value.isCallMuted
+        _uiState.update { it.copy(isCallMuted = newMuted) }
+        mediaManager?.setMicrophoneMute(newMuted)
+        _uiState.value.activeCallSession?.id?.let { callId ->
+            viewModelScope.launch {
+                CallSignalingRepository.updateMediaState(
+                    callId = callId,
+                    isMuted = newMuted,
+                    isVideoEnabled = _uiState.value.isVideoEnabled,
+                    isSpeakerOn = _uiState.value.isSpeakerOn
+                )
+            }
+        }
+    }
+
+    fun toggleSpeakerphone() {
+        val newSpeaker = !_uiState.value.isSpeakerOn
+        _uiState.update { it.copy(isSpeakerOn = newSpeaker) }
+        mediaManager?.setSpeakerphoneOn(newSpeaker)
+        _uiState.value.activeCallSession?.id?.let { callId ->
+            viewModelScope.launch {
+                CallSignalingRepository.updateMediaState(
+                    callId = callId,
+                    isMuted = _uiState.value.isCallMuted,
+                    isVideoEnabled = _uiState.value.isVideoEnabled,
+                    isSpeakerOn = newSpeaker
+                )
+            }
+        }
+    }
+
+    fun toggleVideoEnabled() {
+        val newVideo = !_uiState.value.isVideoEnabled
+        _uiState.update { it.copy(isVideoEnabled = newVideo) }
+        if (!newVideo) {
+            mediaManager?.stopCameraPreview()
+        }
+        _uiState.value.activeCallSession?.id?.let { callId ->
+            viewModelScope.launch {
+                CallSignalingRepository.updateMediaState(
+                    callId = callId,
+                    isMuted = _uiState.value.isCallMuted,
+                    isVideoEnabled = newVideo,
+                    isSpeakerOn = _uiState.value.isSpeakerOn
+                )
+            }
+        }
+    }
+
+    fun flipCamera() {
+        _uiState.update { it.copy(isFrontCamera = !it.isFrontCamera) }
+    }
+
+    /**
+     * For solo-device demonstration and integration testing:
+     * Simulates the remote partner answering the call in WebRTC and Cloud Firestore.
+     */
+    fun simulatePartnerAnswer() {
+        val activeCall = _uiState.value.activeCallSession ?: return
+        viewModelScope.launch {
+            CallSignalingRepository.simulateRemotePartnerAnswer(activeCall.id)
+        }
     }
 
     fun applyFilters(newFilters: DiscoveryFilters) {

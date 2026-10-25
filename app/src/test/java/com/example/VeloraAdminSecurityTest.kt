@@ -839,5 +839,106 @@ class VeloraAdminSecurityTest {
         assertTrue(txnsRes.isSuccessful)
         assertNotNull(txnsRes.data)
     }
+
+    // --- TEST 29: Firebase Auth & Cloud Firestore New User Account Creation & Config Verification ---
+    @Test
+    fun test29_firebaseAuthAndFirestore_newUserRegistrationAndSync() = kotlinx.coroutines.runBlocking {
+        // 1. Verify new user registration and sync via FirebaseAuthRepository
+        val registerResult = com.example.data.FirebaseAuthRepository.registerAndSyncUser(
+            name = "Shafiqul Islam",
+            email = "shafiqul@velora.com",
+            phone = "01812345678",
+            pass = "StrongPass@2026"
+        )
+        assertTrue("Firebase registration and Firestore sync must succeed", registerResult.isSuccess)
+        val profile = registerResult.getOrNull()
+        assertNotNull(profile)
+        assertEquals("Shafiqul Islam", profile?.name)
+        assertEquals("shafiqul@velora.com", profile?.email)
+        assertEquals("01812345678", profile?.phone)
+        assertFalse("New user must NOT be verified without admin audit", profile?.isVerified ?: true)
+        assertFalse("New user must NOT have premium without payment", profile?.isPremium ?: true)
+
+        // 2. Verify current user state updated in session
+        assertEquals("Shafiqul Islam", com.example.data.VeloraData.currentUser.name)
+        assertEquals("shafiqul@velora.com", com.example.data.VeloraData.currentUser.email)
+
+        // 3. Verify login and sync
+        val loginResult = com.example.data.FirebaseAuthRepository.loginAndSyncUser(
+            email = "shafiqul@velora.com",
+            pass = "StrongPass@2026"
+        )
+        assertTrue("Firebase login & Firestore sync must succeed", loginResult.isSuccess)
+    }
+
+    // --- TEST 30: Real-Time Audio & Video Calling Firestore Signaling and Media State Management ---
+    @Test
+    fun test30_realTimeAudioAndVideoCalling_firestoreSignalingAndMediaState() = kotlinx.coroutines.runBlocking {
+        val caller = com.example.data.VeloraData.currentUser
+        val receiver = com.example.data.VeloraData.initialMatches.first()
+
+        // 1. Initiate Real-Time Video Call
+        val callResult = com.example.data.CallSignalingRepository.initiateCall(
+            caller = caller,
+            receiver = receiver,
+            callType = com.example.model.CallType.VIDEO
+        )
+        assertTrue("Call initiation must succeed", callResult.isSuccess)
+        val session = callResult.getOrNull()
+        assertNotNull(session)
+        assertEquals(caller.id, session?.callerId)
+        assertEquals(receiver.user.id, session?.receiverId)
+        assertEquals(com.example.model.CallType.VIDEO, session?.callType)
+        assertEquals(com.example.model.CallStatus.RINGING, session?.status)
+        assertTrue("Offer SDP must be generated for WebRTC signaling", session?.offerSdp?.isNotBlank() == true)
+
+        // 2. Exchange ICE Candidate
+        val iceCand = com.example.model.IceCandidateModel(
+            id = "cand_1",
+            candidate = "candidate:1 1 UDP 2130706431 192.168.1.100 50000 typ host",
+            sdpMid = "0",
+            sdpMLineIndex = 0
+        )
+        val candResult = com.example.data.CallSignalingRepository.sendIceCandidate(session!!.id, isCaller = true, iceCand)
+        assertTrue("Sending ICE candidate must succeed", candResult.isSuccess)
+
+        // 3. Update Media Toggles (Mute, Camera, Speakerphone)
+        val mediaResult = com.example.data.CallSignalingRepository.updateMediaState(
+            callId = session.id,
+            isMuted = true,
+            isVideoEnabled = false,
+            isSpeakerOn = true
+        )
+        assertTrue("Media toggle update must succeed", mediaResult.isSuccess)
+
+        // 4. Partner answers / accepts call
+        val acceptResult = com.example.data.CallSignalingRepository.acceptCall(session.id)
+        assertTrue("Call acceptance must succeed", acceptResult.isSuccess)
+
+        // 5. End Call and record duration
+        val endResult = com.example.data.CallSignalingRepository.endCall(session.id, durationSeconds = 45)
+        assertTrue("Ending call must succeed", endResult.isSuccess)
+
+        // 6. Test ViewModel Calling State Flow
+        val viewModel = com.example.viewmodel.VeloraViewModel()
+        assertFalse(viewModel.uiState.value.isCallingActive)
+        viewModel.startVideoCall(receiver)
+        assertTrue("Video calling must activate state", viewModel.uiState.value.isCallingActive)
+        assertEquals(com.example.model.Screen.VIDEO_CALL, viewModel.uiState.value.currentScreen)
+        assertEquals(com.example.model.CallType.VIDEO, viewModel.uiState.value.activeCallSession?.callType)
+
+        // Toggle mute and speakerphone in ViewModel
+        assertFalse(viewModel.uiState.value.isCallMuted)
+        viewModel.toggleCallMute()
+        assertTrue(viewModel.uiState.value.isCallMuted)
+
+        assertTrue(viewModel.uiState.value.isSpeakerOn)
+        viewModel.toggleSpeakerphone()
+        assertFalse(viewModel.uiState.value.isSpeakerOn)
+
+        viewModel.endActiveCall()
+        assertFalse(viewModel.uiState.value.isCallingActive)
+        assertNull(viewModel.uiState.value.activeCallSession)
+    }
 }
 

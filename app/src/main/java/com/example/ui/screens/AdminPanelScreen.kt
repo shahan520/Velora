@@ -5,6 +5,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -278,7 +279,7 @@ fun AdminDashboardSection(profiles: List<UserProfile>, reports: List<UserReport>
         // Welcome Card
         Card(
             shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
@@ -348,7 +349,7 @@ fun AdminDashboardSection(profiles: List<UserProfile>, reports: List<UserReport>
         // User Growth Chart
         Card(
             shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
@@ -419,7 +420,7 @@ fun AdminDashboardSection(profiles: List<UserProfile>, reports: List<UserReport>
         // Location Distribution
         Card(
             shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
@@ -448,7 +449,7 @@ private fun KpiMetricCard(
 ) {
     Surface(
         shape = RoundedCornerShape(16.dp),
-        color = Color.White,
+        color = MaterialTheme.colorScheme.surface,
         shadowElevation = 1.dp,
         modifier = modifier
     ) {
@@ -552,7 +553,7 @@ fun AdminUsersSection(
             items(filtered) { user ->
                 Surface(
                     shape = RoundedCornerShape(14.dp),
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.surface,
                     shadowElevation = 1.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -672,7 +673,7 @@ fun AdminReportsSection(
             items(filtered) { rep ->
                 Surface(
                     shape = RoundedCornerShape(14.dp),
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.surface,
                     shadowElevation = 1.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -779,7 +780,7 @@ fun AdminAnalyticsSection() {
         // Gender breakdown
         Card(
             shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White)
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("Matches by Gender", fontWeight = FontWeight.Bold, fontSize = 16.sp)
@@ -803,7 +804,7 @@ fun AdminAnalyticsSection() {
         // Top Interests
         Card(
             shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White)
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("Popular Interests", fontWeight = FontWeight.Bold, fontSize = 16.sp)
@@ -873,7 +874,7 @@ fun AdminSubscriptionsSection(
         // --- MFS MERCHANT GATEWAY CONTROLS (bKash & Nagad) ---
         Card(
             shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -917,7 +918,7 @@ fun AdminSubscriptionsSection(
                 // bKash Control Card
                 Surface(
                     shape = RoundedCornerShape(12.dp),
-                    color = Color(0xFFFDF0F5),
+                    color = if (isSystemInDarkTheme()) Color(0xFF2C1020) else Color(0xFFFDF0F5),
                     border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2136E).copy(alpha = 0.4f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -990,7 +991,7 @@ fun AdminSubscriptionsSection(
                 // Nagad Control Card
                 Surface(
                     shape = RoundedCornerShape(12.dp),
-                    color = Color(0xFFFFF7ED),
+                    color = if (isSystemInDarkTheme()) Color(0xFF2E1908) else Color(0xFFFFF7ED),
                     border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF7931E).copy(alpha = 0.4f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -1099,7 +1100,7 @@ fun AdminSubscriptionsSection(
         // --- BDT PACKAGE PRICING CONTROLS ---
         Card(
             shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -1124,7 +1125,7 @@ fun AdminSubscriptionsSection(
 
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = VeloraIvory,
+                        color = MaterialTheme.colorScheme.surfaceVariant,
                         border = androidx.compose.foundation.BorderStroke(1.dp, VeloraCardBorder),
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -1188,7 +1189,7 @@ fun AdminSubscriptionsSection(
         // --- VERIFIED MFS TRANSACTIONS HISTORY ---
         Card(
             shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -1207,7 +1208,7 @@ fun AdminSubscriptionsSection(
                     transactions.forEach { txn ->
                         Surface(
                             shape = RoundedCornerShape(10.dp),
-                            color = VeloraIvory,
+                            color = MaterialTheme.colorScheme.surfaceVariant,
                             border = androidx.compose.foundation.BorderStroke(1.dp, VeloraCardBorder),
                             modifier = Modifier.fillMaxWidth()
                         ) {
@@ -1290,7 +1291,7 @@ fun AdminSettingsSection() {
 
         Card(
             shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White)
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("General App Config", fontWeight = FontWeight.Bold, fontSize = 16.sp)
@@ -1307,7 +1308,7 @@ fun AdminSettingsSection() {
 
         Card(
             shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White)
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("Quick Maintenance Actions", fontWeight = FontWeight.Bold, fontSize = 16.sp)

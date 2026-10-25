@@ -177,17 +177,4 @@ object FirestoreProfileRepository {
     }
 }
 
-/**
- * Extension helper to await Task completion safely with coroutines.
- */
-private suspend fun <T> Task<T>.awaitTaskResult(): T = suspendCancellableCoroutine { cont ->
-    addOnSuccessListener { result ->
-        if (cont.isActive) cont.resume(result)
-    }
-    addOnFailureListener { error ->
-        if (cont.isActive) cont.resumeWithException(error)
-    }
-    addOnCanceledListener {
-        if (cont.isActive) cont.cancel()
-    }
-}
+// Uses internal Task<T>.awaitTaskResult() from FirebaseAuthRepository.kt

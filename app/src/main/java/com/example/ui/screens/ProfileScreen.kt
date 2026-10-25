@@ -5,6 +5,7 @@ package com.example.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -286,7 +287,7 @@ private fun ProfileMenuItem(
         Icon(
             imageVector = Icons.Default.ChevronRight,
             contentDescription = null,
-            tint = VeloraCardBorder,
+            tint = VeloraTextMuted,
             modifier = Modifier.size(20.dp)
         )
     }
@@ -678,7 +679,7 @@ fun MfsCheckoutDialog(
                     // bKash Button
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = if (selectedMethod == "BKASH") Color(0xFFFDE8F1) else MaterialTheme.colorScheme.surface,
+                        color = if (selectedMethod == "BKASH") (if (isSystemInDarkTheme()) Color(0xFF381525) else Color(0xFFFDE8F1)) else MaterialTheme.colorScheme.surface,
                         border = androidx.compose.foundation.BorderStroke(
                             if (selectedMethod == "BKASH") 2.dp else 1.dp,
                             if (selectedMethod == "BKASH") Color(0xFFE2136E) else VeloraCardBorder
@@ -711,7 +712,7 @@ fun MfsCheckoutDialog(
                     // Nagad Button
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = if (selectedMethod == "NAGAD") Color(0xFFFEF4E8) else MaterialTheme.colorScheme.surface,
+                        color = if (selectedMethod == "NAGAD") (if (isSystemInDarkTheme()) Color(0xFF3B200B) else Color(0xFFFEF4E8)) else MaterialTheme.colorScheme.surface,
                         border = androidx.compose.foundation.BorderStroke(
                             if (selectedMethod == "NAGAD") 2.dp else 1.dp,
                             if (selectedMethod == "NAGAD") Color(0xFFF7931E) else VeloraCardBorder
@@ -744,7 +745,7 @@ fun MfsCheckoutDialog(
                     // Card Button
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = if (selectedMethod == "CARD") VeloraLavenderLight else MaterialTheme.colorScheme.surface,
+                        color = if (selectedMethod == "CARD") (if (isSystemInDarkTheme()) Color(0xFF261947) else VeloraLavenderLight) else MaterialTheme.colorScheme.surface,
                         border = androidx.compose.foundation.BorderStroke(
                             if (selectedMethod == "CARD") 2.dp else 1.dp,
                             if (selectedMethod == "CARD") VeloraViolet else VeloraCardBorder
@@ -777,8 +778,8 @@ fun MfsCheckoutDialog(
                 Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = when (selectedMethod) {
-                        "BKASH" -> Color(0xFFFDF0F5)
-                        "NAGAD" -> Color(0xFFFFF7ED)
+                        "BKASH" -> if (isSystemInDarkTheme()) Color(0xFF2C1020) else Color(0xFFFDF0F5)
+                        "NAGAD" -> if (isSystemInDarkTheme()) Color(0xFF2E1908) else Color(0xFFFFF7ED)
                         else -> MaterialTheme.colorScheme.surfaceVariant
                     },
                     modifier = Modifier.fillMaxWidth()

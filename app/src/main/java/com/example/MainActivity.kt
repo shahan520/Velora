@@ -20,6 +20,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.data.FirebaseAuthRepository
 import com.example.model.Screen
 import com.example.ui.components.VeloraBottomBar
 import com.example.ui.screens.*
@@ -35,6 +36,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        FirebaseAuthRepository.initialize(applicationContext)
+        viewModel.bindMediaManager(applicationContext)
         enableEdgeToEdge()
         handleIntent(intent)
         setContent {
@@ -248,7 +251,8 @@ fun VeloraAppRoot(viewModel: VeloraViewModel) {
                         match = activeMatch,
                         messages = messages,
                         onSendMessage = { text -> viewModel.sendMessage(text) },
-                        onStartVideoCall = { viewModel.startVideoCall() },
+                        onStartVoiceCall = { viewModel.startVoiceCall(activeMatch) },
+                        onStartVideoCall = { viewModel.startVideoCall(activeMatch) },
                         onBack = { viewModel.navigateBack() },
                         onReportBlock = { viewModel.openBlockReport(activeMatch.user) }
                     )
@@ -256,11 +260,26 @@ fun VeloraAppRoot(viewModel: VeloraViewModel) {
 
                 Screen.VIDEO_CALL -> {
                     val activeMatch = uiState.activeChatMatch ?: uiState.matches.first()
-                    VideoCallScreen(
-                        match = activeMatch,
+                    val activeSession = uiState.activeCallSession ?: com.example.model.CallSession(
+                        receiverName = activeMatch.user.name,
+                        receiverPhoto = activeMatch.user.photos.firstOrNull() ?: "",
+                        callType = com.example.model.CallType.VIDEO,
+                        status = com.example.model.CallStatus.CONNECTED
+                    )
+                    RealTimeCallScreen(
+                        callSession = activeSession,
+                        durationSeconds = uiState.callDurationSeconds,
                         isMuted = uiState.isCallMuted,
+                        isSpeakerOn = uiState.isSpeakerOn,
+                        isVideoEnabled = uiState.isVideoEnabled,
+                        isFrontCamera = uiState.isFrontCamera,
+                        mediaManager = viewModel.getMediaManager(),
                         onToggleMute = { viewModel.toggleCallMute() },
-                        onEndCall = { viewModel.endVideoCall() }
+                        onToggleSpeaker = { viewModel.toggleSpeakerphone() },
+                        onToggleVideo = { viewModel.toggleVideoEnabled() },
+                        onFlipCamera = { viewModel.flipCamera() },
+                        onEndCall = { viewModel.endActiveCall() },
+                        onSimulateAnswer = { viewModel.simulatePartnerAnswer() }
                     )
                 }
 
@@ -410,6 +429,19 @@ fun VeloraAppRoot(viewModel: VeloraViewModel) {
                         )
                     }
                 }
+            }
+
+            // Real-Time Incoming Call Overlay Banner
+            val incoming = uiState.incomingCallSession
+            if (incoming != null) {
+                IncomingCallOverlay(
+                    callSession = incoming,
+                    onAccept = { viewModel.acceptIncomingCall() },
+                    onDecline = { viewModel.rejectIncomingCall() },
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .statusBarsPadding()
+                )
             }
         }
     }

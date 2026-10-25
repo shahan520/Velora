@@ -19,18 +19,18 @@ private val DarkColorScheme = darkColorScheme(
     tertiary = VeloraGold,
     onTertiary = Color.Black,
     background = VeloraPlumDark,
-    onBackground = Color.White,
+    onBackground = Color(0xFFFAF7FD),
     surface = VeloraPlumSurface,
-    onSurface = Color.White,
+    onSurface = Color(0xFFFAF7FD),
     surfaceVariant = VeloraPlumMedium,
-    onSurfaceVariant = VeloraLavender,
-    outline = Color(0xFF45276B)
+    onSurfaceVariant = Color(0xFFD8CAE3),
+    outline = Color(0xFF3B205B)
 )
 
 private val LightColorScheme = lightColorScheme(
     primary = VeloraPink,
     onPrimary = Color.White,
-    primaryContainer = VeloraPinkSoft,
+    primaryContainer = Color(0xFFFFF0F5),
     onPrimaryContainer = VeloraMagenta,
     secondary = VeloraViolet,
     onSecondary = Color.White,
@@ -38,13 +38,13 @@ private val LightColorScheme = lightColorScheme(
     onSecondaryContainer = VeloraPlumMedium,
     tertiary = VeloraGold,
     onTertiary = Color.Black,
-    background = VeloraIvory,
-    onBackground = VeloraTextPrimary,
-    surface = VeloraSurfaceLight,
-    onSurface = VeloraTextPrimary,
-    surfaceVariant = VeloraPinkSoft,
-    onSurfaceVariant = VeloraTextSecondary,
-    outline = VeloraCardBorder
+    background = Color(0xFFFCF9FA),
+    onBackground = Color(0xFF1E1424),
+    surface = Color(0xFFFFFFFF),
+    onSurface = Color(0xFF1E1424),
+    surfaceVariant = Color(0xFFFFF0F5),
+    onSurfaceVariant = Color(0xFF75677E),
+    outline = Color(0xFFF0E6EB)
 )
 
 @Composable
