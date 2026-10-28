@@ -49,6 +49,7 @@ data class UserProfile(
     val aboutMe: String,
     val interests: List<String>,
     val photos: List<String>,
+    val primaryPhotoUrl: String = "",
     val isVerified: Boolean = false,
     val isOnline: Boolean = false,
     val lastActive: String = "Just now",
@@ -59,7 +60,10 @@ data class UserProfile(
     val phone: String = "",
     val isEmailVerified: Boolean = false,
     val isPhoneVerified: Boolean = false
-)
+) {
+    val effectivePrimaryPhoto: String
+        get() = primaryPhotoUrl.ifBlank { photos.firstOrNull().orEmpty() }
+}
 
 data class MatchItem(
     val id: String,

@@ -32,6 +32,33 @@ class VeloraAdminSecurityTest {
     @Before
     fun setUp() {
         VeloraBackendServer.clearRateLimitsForTesting()
+        com.example.data.VeloraData.currentUser = com.example.model.UserProfile(
+            id = "user_me",
+            name = "Alif Islam",
+            age = 24,
+            gender = "Man",
+            city = "Dhaka",
+            country = "Bangladesh",
+            distanceKm = 0,
+            profession = "Software Engineer",
+            height = "5'10\" (178 cm)",
+            relationshipStatus = "Single",
+            aboutMe = "Curious mind, coffee enthusiast, and avid traveler. Looking for genuine conversations and romantic connections.",
+            interests = listOf("Travel", "Photography", "Music", "Coffee", "Tech"),
+            photos = listOf(
+                "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=80",
+                "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=800&q=80",
+                "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=800&q=80",
+                "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=800&q=80"
+            ),
+            primaryPhotoUrl = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=80",
+            isVerified = true,
+            isOnline = true,
+            email = "alif.islam@example.com",
+            phone = "+880 1712-345678",
+            isEmailVerified = true,
+            isPhoneVerified = true
+        )
     }
 
     // --- TEST 1: Ordinary User Authentication ---
@@ -939,6 +966,148 @@ class VeloraAdminSecurityTest {
         viewModel.endActiveCall()
         assertFalse(viewModel.uiState.value.isCallingActive)
         assertNull(viewModel.uiState.value.activeCallSession)
+    }
+
+    // --- TEST 31: Camera Switch Toggles Front and Back Cameras Successfully ---
+    @Test
+    fun test31_cameraSwitch_togglesFrontAndBackCamerasSuccessfully() {
+        val viewModel = com.example.viewmodel.VeloraViewModel()
+        // Default is front camera
+        assertTrue("Default camera orientation should be front camera", viewModel.uiState.value.isFrontCamera)
+
+        // First toggle: switches from front camera to back camera
+        viewModel.flipCamera()
+        assertFalse("Camera switch should toggle from front to back camera", viewModel.uiState.value.isFrontCamera)
+
+        // Second toggle: switches back to front camera
+        viewModel.flipCamera()
+        assertTrue("Camera switch should toggle back to front camera", viewModel.uiState.value.isFrontCamera)
+    }
+
+    // --- TEST 32: Profile Photos Logic Supports Dedicated Primary Photo and 4 to 5 Clear Face Photos ---
+    @Test
+    fun test32_profilePhotos_supportsDedicatedPrimaryAnd4To5FacePhotos() = kotlinx.coroutines.runBlocking {
+        val initialTestPhotos = listOf(
+            "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=80",
+            "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=800&q=80",
+            "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=800&q=80",
+            "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=800&q=80"
+        )
+        com.example.data.VeloraData.currentUser = com.example.data.VeloraData.currentUser.copy(
+            photos = initialTestPhotos,
+            primaryPhotoUrl = initialTestPhotos[0]
+        )
+        val currentUser = com.example.data.VeloraData.currentUser
+        assertNotNull("Current user must exist", currentUser)
+
+        // 1. Verify 4-5 clear face photos are present in user profile
+        assertTrue("User should have at least 4 clear face photos", currentUser.photos.size >= 4)
+        assertTrue("User can have up to 5 clear face photos", currentUser.photos.size <= 5)
+
+        // 2. Verify dedicated primary photo and effectivePrimaryPhoto helper
+        assertTrue("Dedicated primary photo URL must be set", currentUser.primaryPhotoUrl.isNotBlank())
+        assertEquals(currentUser.primaryPhotoUrl, currentUser.effectivePrimaryPhoto)
+
+        // 3. Test saving a new dedicated primary photo URL
+        val newPrimaryUrl = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80"
+        val savePrimaryResult = com.example.data.FirestoreProfileRepository.savePrimaryPhotoUrl(
+            userId = currentUser.id,
+            primaryUrl = newPrimaryUrl
+        )
+        assertTrue("Saving dedicated primary photo must succeed", savePrimaryResult.isSuccess)
+        val updatedProfile = savePrimaryResult.getOrNull()
+        assertNotNull(updatedProfile)
+        assertEquals(newPrimaryUrl, updatedProfile!!.primaryPhotoUrl)
+        assertEquals(newPrimaryUrl, updatedProfile.effectivePrimaryPhoto)
+        assertEquals(newPrimaryUrl, updatedProfile.photos.first())
+
+        // 4. Test multi-photo upload (saving batch of clear face photos, capped at 5)
+        val additionalPhotos = listOf(
+            "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=800&q=80",
+            "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=800&q=80"
+        )
+        val multiResult = com.example.data.FirestoreProfileRepository.saveMultipleProfilePhotos(
+            userId = currentUser.id,
+            newPhotoUrls = additionalPhotos
+        )
+        assertTrue("Saving multiple face photos must succeed", multiResult.isSuccess)
+        val multiProfile = multiResult.getOrNull()
+        assertNotNull(multiProfile)
+        assertTrue("Face photos count should be between 4 and 5", multiProfile!!.photos.size in 4..5)
+
+        // 5. Test setPrimaryPhoto
+        val targetPrimary = multiProfile.photos.last()
+        val setPrimaryResult = com.example.data.FirestoreProfileRepository.setPrimaryPhoto(
+            userId = currentUser.id,
+            primaryUrl = targetPrimary
+        )
+        assertTrue("setPrimaryPhoto must succeed", setPrimaryResult.isSuccess)
+        assertEquals(targetPrimary, com.example.data.VeloraData.currentUser.primaryPhotoUrl)
+
+        // 6. Test removeProfilePhoto
+        val initialSize = com.example.data.VeloraData.currentUser.photos.size
+        val removeResult = com.example.data.FirestoreProfileRepository.removeProfilePhoto(
+            userId = currentUser.id,
+            photoUrlToRemove = targetPrimary
+        )
+        assertTrue("removeProfilePhoto must succeed", removeResult.isSuccess)
+        assertEquals(initialSize - 1, com.example.data.VeloraData.currentUser.photos.size)
+        assertFalse(com.example.data.VeloraData.currentUser.photos.contains(targetPrimary))
+    }
+
+    // --- TEST 33: Global Filter Successfully Displays Worldwide Profiles without Distance Restrictions ---
+    @Test
+    fun test33_globalFilter_successfullyFiltersProfilesWorldwideWithoutDistanceRestriction() {
+        val viewModel = com.example.viewmodel.VeloraViewModel()
+
+        // 1. Apply standard local filter with 50 km distance limit
+        viewModel.applyFilters(
+            com.example.model.DiscoveryFilters(
+                minAge = 18,
+                maxAge = 40,
+                maxDistanceKm = 50,
+                gender = "All",
+                country = "Bangladesh 🇧🇩"
+            )
+        )
+        val localProfiles = viewModel.uiState.value.profiles
+        assertTrue("Local profiles must be within Bangladesh and distance limit", localProfiles.all { it.distanceKm <= 50 })
+        assertTrue("All local profiles must be Bangladesh", localProfiles.all { it.country.contains("Bangladesh", ignoreCase = true) })
+
+        // 2. Apply "Global 🌐" filter
+        viewModel.applyFilters(
+            com.example.model.DiscoveryFilters(
+                minAge = 18,
+                maxAge = 40,
+                maxDistanceKm = 50, // Even with 50 km max, Global should lift distance bounds
+                gender = "All",
+                country = "Global 🌐"
+            )
+        )
+        val globalProfiles = viewModel.uiState.value.profiles
+        assertTrue("Global filter must return profiles", globalProfiles.isNotEmpty())
+
+        // Verify international/worldwide profiles with distance > 100 km are present
+        val internationalProfiles = globalProfiles.filter { it.distanceKm > 100 || it.country.contains("Global", ignoreCase = true) || it.country.contains("India", ignoreCase = true) }
+        assertTrue("Global filter must include worldwide profiles regardless of local distance bounds", internationalProfiles.isNotEmpty())
+
+        val hasSarah = globalProfiles.any { it.name.contains("Sarah") }
+        val hasPriya = globalProfiles.any { it.name.contains("Priya") }
+        assertTrue("Global filter must show international profiles like Sarah or Priya", hasSarah || hasPriya)
+
+        // 3. Apply "India 🇮🇳" filter
+        viewModel.applyFilters(
+            com.example.model.DiscoveryFilters(
+                minAge = 18,
+                maxAge = 40,
+                maxDistanceKm = 2000,
+                gender = "All",
+                country = "India 🇮🇳"
+            )
+        )
+        val indiaProfiles = viewModel.uiState.value.profiles
+        assertTrue("India filter must find profiles in India", indiaProfiles.isNotEmpty())
+        assertTrue("All returned profiles must be in India", indiaProfiles.all { it.country.equals("India", ignoreCase = true) })
     }
 }
 

@@ -259,7 +259,8 @@ fun VideoCallScreen(
     match: MatchItem,
     isMuted: Boolean,
     onToggleMute: () -> Unit,
-    onEndCall: () -> Unit
+    onEndCall: () -> Unit,
+    onFlipCamera: () -> Unit = {}
 ) {
     Box(
         modifier = Modifier
@@ -374,7 +375,7 @@ fun VideoCallScreen(
 
             // Switch Camera
             IconButton(
-                onClick = { /* switch camera */ },
+                onClick = onFlipCamera,
                 modifier = Modifier
                     .size(56.dp)
                     .clip(CircleShape)

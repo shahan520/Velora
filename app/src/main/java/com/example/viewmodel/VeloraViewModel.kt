@@ -971,7 +971,9 @@ class VeloraViewModel : ViewModel() {
     }
 
     fun flipCamera() {
-        _uiState.update { it.copy(isFrontCamera = !it.isFrontCamera) }
+        val newFront = !_uiState.value.isFrontCamera
+        _uiState.update { it.copy(isFrontCamera = newFront) }
+        mediaManager?.flipCamera()
     }
 
     /**
@@ -987,11 +989,29 @@ class VeloraViewModel : ViewModel() {
 
     fun applyFilters(newFilters: DiscoveryFilters) {
         _uiState.update { state ->
+            val isGlobal = newFilters.country.contains("Global", ignoreCase = true)
             val filtered = VeloraData.discoverProfiles.filter { user ->
                 val ageOk = user.age in newFilters.minAge..newFilters.maxAge
-                val distanceOk = user.distanceKm <= newFilters.maxDistanceKm
+                val distanceOk = if (isGlobal) true else user.distanceKm <= newFilters.maxDistanceKm
                 val genderOk = newFilters.gender == "All" || user.gender.equals(newFilters.gender, ignoreCase = true)
-                ageOk && distanceOk && genderOk && user.id !in state.blockedUserIds
+                val countryOk = when {
+                    isGlobal -> true
+                    newFilters.country.equals("Any", ignoreCase = true) -> true
+                    newFilters.country.contains("Bangladesh", ignoreCase = true) -> user.country.equals("Bangladesh", ignoreCase = true)
+                    newFilters.country.contains("India", ignoreCase = true) -> user.country.equals("India", ignoreCase = true)
+                    else -> user.country.contains(newFilters.country, ignoreCase = true)
+                }
+                ageOk && distanceOk && genderOk && countryOk && user.id !in state.blockedUserIds
+            }.let { list ->
+                if (isGlobal) {
+                    list.sortedByDescending {
+                        it.country.equals("Global", ignoreCase = true) ||
+                        it.country.equals("India", ignoreCase = true) ||
+                        it.distanceKm > 100
+                    }
+                } else {
+                    list
+                }
             }
             state.copy(
                 filters = newFilters,
@@ -1369,7 +1389,170 @@ class VeloraViewModel : ViewModel() {
 
     // --- Cloudinary & Cloud Firestore Profile Photo Operations ---
 
+    /**
+     * Upload a dedicated Primary Profile Photo to Cloudinary CDN & Cloud Firestore.
+     */
+    fun uploadPrimaryPhotoFromUri(context: Context, imageUri: Uri) {
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isUploadingPhoto = true,
+                    photoUploadProgress = 0.25f,
+                    photoUploadStatus = "Reading primary profile photo..."
+                )
+            }
+
+            delay(200)
+            _uiState.update {
+                it.copy(
+                    photoUploadProgress = 0.6f,
+                    photoUploadStatus = "Uploading primary photo to Cloudinary CDN..."
+                )
+            }
+
+            val uploadResult = CloudinaryUploadService.uploadImageFromUri(context, imageUri)
+            when (uploadResult) {
+                is UploadResult.Success -> {
+                    _uiState.update {
+                        it.copy(
+                            photoUploadProgress = 0.85f,
+                            photoUploadStatus = "Setting primary photo in Cloud Firestore...",
+                            lastUploadedCdnUrl = uploadResult.secureUrl
+                        )
+                    }
+
+                    val currentUserId = _uiState.value.currentUserProfile.id
+                    val firestoreResult = FirestoreProfileRepository.savePrimaryPhotoUrl(
+                        userId = currentUserId,
+                        primaryUrl = uploadResult.secureUrl
+                    )
+
+                    firestoreResult.fold(
+                        onSuccess = { updatedProfile ->
+                            _uiState.update {
+                                it.copy(
+                                    currentUserProfile = updatedProfile,
+                                    isUploadingPhoto = false,
+                                    photoUploadProgress = 1.0f,
+                                    photoUploadStatus = null,
+                                    toastMessage = "Primary profile photo updated via Cloudinary CDN & Firestore! ⭐"
+                                )
+                            }
+                        },
+                        onFailure = { error ->
+                            _uiState.update {
+                                it.copy(
+                                    isUploadingPhoto = false,
+                                    photoUploadStatus = null,
+                                    toastMessage = "Failed to sync primary photo to Firestore: ${error.localizedMessage}"
+                                )
+                            }
+                        }
+                    )
+                }
+                is UploadResult.Error -> {
+                    _uiState.update {
+                        it.copy(
+                            isUploadingPhoto = false,
+                            photoUploadStatus = null,
+                            toastMessage = "Cloudinary upload error: ${uploadResult.message}"
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Upload 4 to 5 clear face photos in batch or sequence.
+     */
+    fun uploadMultiplePhotosFromUris(context: Context, uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isUploadingPhoto = true,
+                    photoUploadProgress = 0.1f,
+                    photoUploadStatus = "Preparing ${uris.size} face photos for upload..."
+                )
+            }
+
+            val uploadedUrls = mutableListOf<String>()
+            val maxAllowed = 5 - _uiState.value.currentUserProfile.photos.size
+            val selectedUris = uris.take(if (maxAllowed > 0) maxAllowed else 5)
+
+            selectedUris.forEachIndexed { idx, uri ->
+                val progress = 0.2f + (0.6f * ((idx + 1).toFloat() / selectedUris.size))
+                _uiState.update {
+                    it.copy(
+                        photoUploadProgress = progress,
+                        photoUploadStatus = "Uploading face photo ${idx + 1} of ${selectedUris.size} to Cloudinary..."
+                    )
+                }
+                when (val result = CloudinaryUploadService.uploadImageFromUri(context, uri)) {
+                    is UploadResult.Success -> {
+                        uploadedUrls.add(result.secureUrl)
+                    }
+                    is UploadResult.Error -> {
+                        // Continue uploading other photos if one fails
+                    }
+                }
+            }
+
+            if (uploadedUrls.isNotEmpty()) {
+                _uiState.update {
+                    it.copy(
+                        photoUploadProgress = 0.9f,
+                        photoUploadStatus = "Saving ${uploadedUrls.size} face photos in Cloud Firestore...",
+                        lastUploadedCdnUrl = uploadedUrls.lastOrNull()
+                    )
+                }
+
+                val currentUserId = _uiState.value.currentUserProfile.id
+                val firestoreResult = FirestoreProfileRepository.saveMultipleProfilePhotos(
+                    userId = currentUserId,
+                    newPhotoUrls = uploadedUrls
+                )
+
+                firestoreResult.fold(
+                    onSuccess = { updatedProfile ->
+                        _uiState.update {
+                            it.copy(
+                                currentUserProfile = updatedProfile,
+                                isUploadingPhoto = false,
+                                photoUploadProgress = 1.0f,
+                                photoUploadStatus = null,
+                                toastMessage = "Successfully uploaded ${uploadedUrls.size} face photos to your profile! 📸"
+                            )
+                        }
+                    },
+                    onFailure = { error ->
+                        _uiState.update {
+                            it.copy(
+                                isUploadingPhoto = false,
+                                photoUploadStatus = null,
+                                toastMessage = "Failed to sync photos to Firestore: ${error.localizedMessage}"
+                            )
+                        }
+                    }
+                )
+            } else {
+                _uiState.update {
+                    it.copy(
+                        isUploadingPhoto = false,
+                        photoUploadStatus = null,
+                        toastMessage = "Could not upload photos. Please try again."
+                    )
+                }
+            }
+        }
+    }
+
     fun uploadPhotoFromUri(context: Context, imageUri: Uri) {
+        if (_uiState.value.currentUserProfile.photos.size >= 5) {
+            showToast("Maximum 5 face photos reached. Remove a photo to upload a new one.")
+            return
+        }
         viewModelScope.launch {
             _uiState.update {
                 it.copy(
@@ -1401,22 +1584,27 @@ class VeloraViewModel : ViewModel() {
 
                     // Save URL directly into user's profile document in Cloud Firestore
                     val currentUserId = _uiState.value.currentUserProfile.id
+                    val isFirstPhoto = _uiState.value.currentUserProfile.photos.isEmpty()
                     val firestoreResult = FirestoreProfileRepository.saveProfilePhotoUrl(
                         userId = currentUserId,
                         newPhotoUrl = uploadResult.secureUrl,
-                        setAsPrimary = true
+                        setAsPrimary = isFirstPhoto
                     )
 
                     firestoreResult.fold(
                         onSuccess = { updatedPhotos ->
-                            val updatedProfile = _uiState.value.currentUserProfile.copy(photos = updatedPhotos)
+                            val currentPrimary = _uiState.value.currentUserProfile.effectivePrimaryPhoto.ifBlank { uploadResult.secureUrl }
+                            val updatedProfile = _uiState.value.currentUserProfile.copy(
+                                photos = updatedPhotos.take(5),
+                                primaryPhotoUrl = currentPrimary
+                            )
                             _uiState.update {
                                 it.copy(
                                     currentUserProfile = updatedProfile,
                                     isUploadingPhoto = false,
                                     photoUploadProgress = 1.0f,
                                     photoUploadStatus = null,
-                                    toastMessage = "Profile photo uploaded to Cloudinary CDN & saved to Firestore! ✨"
+                                    toastMessage = "Face photo uploaded to Cloudinary CDN & saved to Firestore! ✨"
                                 )
                             }
                         },
@@ -1444,7 +1632,34 @@ class VeloraViewModel : ViewModel() {
         }
     }
 
-    fun uploadSamplePhoto(sampleUrl: String) {
+    fun uploadSamplePhoto(sampleUrl: String, asPrimary: Boolean = false) {
+        if (asPrimary) {
+            viewModelScope.launch {
+                val currentUserId = _uiState.value.currentUserProfile.id
+                val result = FirestoreProfileRepository.savePrimaryPhotoUrl(currentUserId, sampleUrl)
+                result.fold(
+                    onSuccess = { updatedProfile ->
+                        _uiState.update {
+                            it.copy(
+                                currentUserProfile = updatedProfile,
+                                lastUploadedCdnUrl = sampleUrl,
+                                toastMessage = "Primary profile photo updated! ⭐"
+                            )
+                        }
+                    },
+                    onFailure = { error ->
+                        showToast("Error updating primary photo: ${error.localizedMessage}")
+                    }
+                )
+            }
+            return
+        }
+
+        if (_uiState.value.currentUserProfile.photos.size >= 5) {
+            showToast("Maximum 5 face photos reached. Remove a photo first.")
+            return
+        }
+
         viewModelScope.launch {
             _uiState.update {
                 it.copy(
@@ -1458,12 +1673,15 @@ class VeloraViewModel : ViewModel() {
             val firestoreResult = FirestoreProfileRepository.saveProfilePhotoUrl(
                 userId = currentUserId,
                 newPhotoUrl = sampleUrl,
-                setAsPrimary = true
+                setAsPrimary = _uiState.value.currentUserProfile.photos.isEmpty()
             )
 
             firestoreResult.fold(
                 onSuccess = { updatedPhotos ->
-                    val updatedProfile = _uiState.value.currentUserProfile.copy(photos = updatedPhotos)
+                    val updatedProfile = _uiState.value.currentUserProfile.copy(
+                        photos = updatedPhotos.take(5),
+                        primaryPhotoUrl = _uiState.value.currentUserProfile.effectivePrimaryPhoto.ifBlank { sampleUrl }
+                    )
                     _uiState.update {
                         it.copy(
                             currentUserProfile = updatedProfile,
@@ -1471,7 +1689,7 @@ class VeloraViewModel : ViewModel() {
                             photoUploadProgress = 1.0f,
                             photoUploadStatus = null,
                             lastUploadedCdnUrl = sampleUrl,
-                            toastMessage = "Profile picture updated via Cloudinary CDN & saved to Firestore! ✨"
+                            toastMessage = "Face photo updated via Cloudinary CDN & saved to Firestore! ✨"
                         )
                     }
                 },
@@ -1494,11 +1712,14 @@ class VeloraViewModel : ViewModel() {
             val result = FirestoreProfileRepository.setPrimaryPhoto(currentUserId, photoUrl)
             result.fold(
                 onSuccess = { updatedPhotos ->
-                    val updatedProfile = _uiState.value.currentUserProfile.copy(photos = updatedPhotos)
+                    val updatedProfile = _uiState.value.currentUserProfile.copy(
+                        photos = updatedPhotos,
+                        primaryPhotoUrl = photoUrl
+                    )
                     _uiState.update {
                         it.copy(
                             currentUserProfile = updatedProfile,
-                            toastMessage = "Primary profile photo updated in Cloud Firestore."
+                            toastMessage = "Primary profile photo updated in Cloud Firestore. ⭐"
                         )
                     }
                 },
@@ -1515,7 +1736,15 @@ class VeloraViewModel : ViewModel() {
             val result = FirestoreProfileRepository.removeProfilePhoto(currentUserId, photoUrl)
             result.fold(
                 onSuccess = { updatedPhotos ->
-                    val updatedProfile = _uiState.value.currentUserProfile.copy(photos = updatedPhotos)
+                    val updatedPrimary = if (_uiState.value.currentUserProfile.primaryPhotoUrl == photoUrl) {
+                        updatedPhotos.firstOrNull().orEmpty()
+                    } else {
+                        _uiState.value.currentUserProfile.primaryPhotoUrl
+                    }
+                    val updatedProfile = _uiState.value.currentUserProfile.copy(
+                        photos = updatedPhotos,
+                        primaryPhotoUrl = updatedPrimary
+                    )
                     _uiState.update {
                         it.copy(
                             currentUserProfile = updatedProfile,

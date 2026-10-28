@@ -100,6 +100,109 @@ object FirestoreProfileRepository {
     }
 
     /**
+     * Stores a dedicated Primary Profile Photo URL directly into the user's profile document in Firestore.
+     */
+    suspend fun savePrimaryPhotoUrl(
+        userId: String = VeloraData.currentUser.id,
+        primaryUrl: String
+    ): Result<UserProfile> = withContext(Dispatchers.IO) {
+        try {
+            val currentProfile = VeloraData.currentUser
+            // Ensure primary photo is also at the start of the photos list (capped at 5 photos)
+            val updatedPhotos = (listOf(primaryUrl) + currentProfile.photos.filter { it != primaryUrl }).take(5)
+
+            try {
+                val firestore = FirebaseFirestore.getInstance()
+                val userDocRef = firestore.collection(USERS_COLLECTION).document(userId)
+                val updates = hashMapOf<String, Any>(
+                    "primaryPhotoUrl" to primaryUrl,
+                    "photos" to updatedPhotos,
+                    "photoCount" to updatedPhotos.size,
+                    "lastPhotoUploadedAt" to System.currentTimeMillis(),
+                    "updatedAt" to System.currentTimeMillis()
+                )
+                userDocRef.set(updates, SetOptions.merge()).awaitTaskResult()
+                logInfo(TAG, "Successfully synced primary photo URL to Firestore /users/$userId")
+            } catch (e: Exception) {
+                logWarn(TAG, "Firestore primary photo sync note: ${e.message}")
+            }
+
+            val token = com.example.server.ServerTokenManager.createToken(
+                userId = userId,
+                email = currentProfile.email.ifBlank { "alif@example.com" },
+                role = com.example.server.Role.USER
+            )
+            VeloraBackendServer.updateUserProfile(
+                authHeader = "Bearer $token",
+                targetUserId = userId,
+                updates = UserProfileUpdate(photos = updatedPhotos)
+            )
+
+            val updatedProfile = currentProfile.copy(
+                primaryPhotoUrl = primaryUrl,
+                photos = updatedPhotos
+            )
+            VeloraData.currentUser = updatedProfile
+            Result.success(updatedProfile)
+        } catch (e: Exception) {
+            logError(TAG, "Error saving primary photo to Firestore: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Save multiple clear face photos (4 to 5 photos) to the user's profile document in Firestore.
+     */
+    suspend fun saveMultipleProfilePhotos(
+        userId: String = VeloraData.currentUser.id,
+        newPhotoUrls: List<String>
+    ): Result<UserProfile> = withContext(Dispatchers.IO) {
+        try {
+            val currentProfile = VeloraData.currentUser
+            // Combine with existing photos without duplicates, capped at 5 face photos
+            val combined = (currentProfile.photos + newPhotoUrls).distinct().take(5)
+            val primary = currentProfile.primaryPhotoUrl.ifBlank { combined.firstOrNull().orEmpty() }
+
+            try {
+                val firestore = FirebaseFirestore.getInstance()
+                val userDocRef = firestore.collection(USERS_COLLECTION).document(userId)
+                val updates = hashMapOf<String, Any>(
+                    "photos" to combined,
+                    "primaryPhotoUrl" to primary,
+                    "photoCount" to combined.size,
+                    "lastPhotoUploadedAt" to System.currentTimeMillis(),
+                    "updatedAt" to System.currentTimeMillis()
+                )
+                userDocRef.set(updates, SetOptions.merge()).awaitTaskResult()
+                logInfo(TAG, "Synced ${combined.size} photos to Firestore /users/$userId")
+            } catch (e: Exception) {
+                logWarn(TAG, "Firestore multi-photo sync note: ${e.message}")
+            }
+
+            val token = com.example.server.ServerTokenManager.createToken(
+                userId = userId,
+                email = currentProfile.email.ifBlank { "alif@example.com" },
+                role = com.example.server.Role.USER
+            )
+            VeloraBackendServer.updateUserProfile(
+                authHeader = "Bearer $token",
+                targetUserId = userId,
+                updates = UserProfileUpdate(photos = combined)
+            )
+
+            val updatedProfile = currentProfile.copy(
+                photos = combined,
+                primaryPhotoUrl = primary
+            )
+            VeloraData.currentUser = updatedProfile
+            Result.success(updatedProfile)
+        } catch (e: Exception) {
+            logError(TAG, "Error saving multiple photos: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
      * Remove a photo from the user's profile document in Firestore.
      */
     suspend fun removeProfilePhoto(
@@ -113,12 +216,18 @@ object FirestoreProfileRepository {
                 return@withContext Result.failure(IllegalStateException("Profile must keep at least one photo."))
             }
 
+            val updatedPrimary = if (currentProfile.primaryPhotoUrl == photoUrlToRemove) {
+                updatedPhotos.firstOrNull().orEmpty()
+            } else {
+                currentProfile.primaryPhotoUrl
+            }
+
             try {
                 val firestore = FirebaseFirestore.getInstance()
                 val userDocRef = firestore.collection(USERS_COLLECTION).document(userId)
                 val updates = hashMapOf<String, Any>(
                     "photos" to updatedPhotos,
-                    "primaryPhotoUrl" to (updatedPhotos.firstOrNull() ?: ""),
+                    "primaryPhotoUrl" to updatedPrimary,
                     "photoCount" to updatedPhotos.size,
                     "updatedAt" to System.currentTimeMillis()
                 )
@@ -138,7 +247,10 @@ object FirestoreProfileRepository {
                 updates = UserProfileUpdate(photos = updatedPhotos)
             )
 
-            VeloraData.currentUser = VeloraData.currentUser.copy(photos = updatedPhotos)
+            VeloraData.currentUser = VeloraData.currentUser.copy(
+                photos = updatedPhotos,
+                primaryPhotoUrl = updatedPrimary
+            )
             Result.success(updatedPhotos)
         } catch (e: Exception) {
             Result.failure(e)
@@ -154,7 +266,7 @@ object FirestoreProfileRepository {
     ): Result<List<String>> = withContext(Dispatchers.IO) {
         try {
             val currentProfile = VeloraData.currentUser
-            val updatedPhotos = listOf(primaryUrl) + currentProfile.photos.filter { it != primaryUrl }
+            val updatedPhotos = (listOf(primaryUrl) + currentProfile.photos.filter { it != primaryUrl }).take(5)
 
             try {
                 val firestore = FirebaseFirestore.getInstance()
@@ -169,7 +281,10 @@ object FirestoreProfileRepository {
                 logWarn(TAG, "Firestore setPrimaryPhoto note: ${e.message}")
             }
 
-            VeloraData.currentUser = VeloraData.currentUser.copy(photos = updatedPhotos)
+            VeloraData.currentUser = VeloraData.currentUser.copy(
+                photos = updatedPhotos,
+                primaryPhotoUrl = primaryUrl
+            )
             Result.success(updatedPhotos)
         } catch (e: Exception) {
             Result.failure(e)

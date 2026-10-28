@@ -47,6 +47,8 @@ fun EditProfileScreen(
     uploadStatus: String?,
     lastUploadedUrl: String?,
     onUploadPhotoUri: (Uri) -> Unit,
+    onUploadPrimaryPhotoUri: (Uri) -> Unit = {},
+    onUploadMultiplePhotos: (List<Uri>) -> Unit = {},
     onUploadSamplePhoto: (String) -> Unit,
     onSetPrimaryPhoto: (String) -> Unit,
     onRemovePhoto: (String) -> Unit,
@@ -60,7 +62,25 @@ fun EditProfileScreen(
     var showSamplePicker by remember { mutableStateOf(false) }
     var showConfigDialog by remember { mutableStateOf(false) }
 
-    // Modern Android Photo Picker (Google Play policy compliant, zero-permission)
+    // Dedicated Primary Photo Picker
+    val primaryPhotoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            onUploadPrimaryPhotoUri(uri)
+        }
+    }
+
+    // Multi-photo picker for 4 to 5 Clear Face Photos
+    val multiPhotoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickMultipleVisualMedia(5)
+    ) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) {
+            onUploadMultiplePhotos(uris)
+        }
+    }
+
+    // Single photo picker fallback
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
@@ -201,216 +221,418 @@ fun EditProfileScreen(
                 }
             }
 
-            // Photos Section Header
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            // 1. DEDICATED PRIMARY PROFILE PHOTO SECTION
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = androidx.compose.foundation.BorderStroke(2.dp, VeloraPink),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("primary_photo_section")
             ) {
-                Column {
-                    Text(
-                        text = "Profile Photos (${user.photos.size})",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 17.sp,
-                        color = VeloraTextPrimary
-                    )
-                    Text(
-                        text = "First photo is your main dating profile picture",
-                        fontSize = 12.sp,
-                        color = VeloraTextSecondary
-                    )
-                }
-
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    // Quick sample photo button for testing
-                    OutlinedButton(
-                        onClick = { showSamplePicker = !showSamplePicker },
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                        modifier = Modifier.testTag("sample_photos_toggle_button")
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            Icons.Default.AutoAwesome,
-                            contentDescription = null,
-                            tint = VeloraViolet,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Samples", fontSize = 12.sp, color = VeloraViolet)
-                    }
-
-                    // Gallery photo picker
-                    Button(
-                        onClick = {
-                            photoPickerLauncher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                            )
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = VeloraPink),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                        enabled = !isUploading,
-                        modifier = Modifier.testTag("upload_gallery_photo_button")
-                    ) {
-                        Icon(
-                            Icons.Default.AddPhotoAlternate,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Add Photo", fontSize = 12.sp, color = Color.White, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-
-            // Quick Samples Dropdown/Carousel
-            AnimatedVisibility(visible = showSamplePicker) {
-                Card(
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Text(
-                            text = "Tap to upload curated dating profile photo to Cloudinary CDN:",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = VeloraTextPrimary
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            items(CloudinaryUploadService.sampleProfilePhotos) { sampleUrl ->
-                                Box(
-                                    modifier = Modifier
-                                        .size(68.dp)
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .clickable {
-                                            onUploadSamplePhoto(sampleUrl)
-                                            showSamplePicker = false
-                                        }
-                                        .border(1.5.dp, VeloraPinkSoft, RoundedCornerShape(12.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = VeloraPink,
+                                modifier = Modifier.padding(end = 8.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    AsyncImage(
-                                        model = sampleUrl,
-                                        contentDescription = "Sample avatar",
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentScale = ContentScale.Crop
-                                    )
-                                    Box(
-                                        modifier = Modifier
-                                            .align(Alignment.BottomEnd)
-                                            .size(20.dp)
-                                            .background(VeloraPink, RoundedCornerShape(topStart = 8.dp)),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Add,
-                                            contentDescription = "Add",
-                                            tint = Color.White,
-                                            modifier = Modifier.size(14.dp)
-                                        )
-                                    }
+                                    Icon(Icons.Default.Star, contentDescription = null, tint = Color.White, modifier = Modifier.size(12.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("PRIMARY PHOTO", fontSize = 10.sp, fontWeight = FontWeight.Black, color = Color.White)
                                 }
                             }
+                            Text("Main Profile Picture", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = VeloraTextPrimary)
+                        }
+
+                        Button(
+                            onClick = {
+                                primaryPhotoPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = VeloraPink),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            enabled = !isUploading,
+                            modifier = Modifier.testTag("change_primary_photo_button")
+                        ) {
+                            Icon(Icons.Default.CameraAlt, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Change Primary", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(96.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .border(2.dp, VeloraPink, RoundedCornerShape(16.dp))
+                                .clickable {
+                                    primaryPhotoPickerLauncher.launch(
+                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                    )
+                                }
+                        ) {
+                            AsyncImage(
+                                model = user.effectivePrimaryPhoto,
+                                contentDescription = "Primary Profile Photo",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .size(24.dp)
+                                    .background(VeloraPink, RoundedCornerShape(topStart = 8.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.Edit, contentDescription = null, tint = Color.White, modifier = Modifier.size(12.dp))
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(16.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Your Primary Dating Photo",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                                color = VeloraTextPrimary
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "This is the first picture everyone sees on discovery cards, match lists, and video calls.",
+                                fontSize = 12.sp,
+                                color = VeloraTextSecondary,
+                                lineHeight = 16.sp
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "✓ High resolution & clear face required",
+                                fontSize = 11.sp,
+                                color = VeloraPink,
+                                fontWeight = FontWeight.SemiBold
+                            )
                         }
                     }
                 }
             }
 
-            // Current Photos Grid / Cards
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                user.photos.forEachIndexed { index, photoUrl ->
-                    val isPrimary = index == 0
-                    Card(
-                        shape = RoundedCornerShape(18.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = androidx.compose.foundation.BorderStroke(
-                            if (isPrimary) 2.dp else 1.dp,
-                            if (isPrimary) VeloraPink else VeloraCardBorder
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("profile_photo_card_$index")
+            // 2. CLEAR FACE PHOTOS (4 TO 5 PHOTOS) SECTION
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = androidx.compose.foundation.BorderStroke(1.dp, VeloraCardBorder),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("face_photos_section")
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(72.dp)
-                                    .clip(RoundedCornerShape(14.dp))
-                            ) {
-                                AsyncImage(
-                                    model = photoUrl,
-                                    contentDescription = "Photo ${index + 1}",
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop
-                                )
-                                if (isPrimary) {
-                                    Surface(
-                                        shape = RoundedCornerShape(bottomEnd = 8.dp),
-                                        color = VeloraPink,
-                                        modifier = Modifier.align(Alignment.TopStart)
-                                    ) {
-                                        Text(
-                                            text = "MAIN",
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Black,
-                                            color = Color.White,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                        )
-                                    }
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.width(14.dp))
-
-                            Column(modifier = Modifier.weight(1f)) {
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    text = if (isPrimary) "Primary Photo" else "Photo ${index + 1}",
+                                    text = "Clear Face Photos",
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp,
+                                    fontSize = 16.sp,
                                     color = VeloraTextPrimary
                                 )
-                                Text(
-                                    text = if (photoUrl.contains("cloudinary.com")) "Cloudinary CDN Hosted" else "CDN Image",
-                                    fontSize = 11.sp,
-                                    color = VeloraTextSecondary
-                                )
-                                Text(
-                                    text = photoUrl,
-                                    fontSize = 10.sp,
-                                    color = VeloraTextMuted,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = if (user.photos.size >= 4) VeloraPink.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant
+                                ) {
+                                    Text(
+                                        text = "${user.photos.size} / 5 Photos",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (user.photos.size >= 4) VeloraPink else VeloraTextSecondary,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                            Text(
+                                text = if (user.photos.size >= 4) "✓ 4-5 clear face photos requirement met" else "Upload 4 to 5 clear face photos for profile verification",
+                                fontSize = 12.sp,
+                                color = if (user.photos.size >= 4) VeloraPink else VeloraTextSecondary
+                            )
+                        }
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            // Quick Samples button
+                            OutlinedButton(
+                                onClick = { showSamplePicker = !showSamplePicker },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                modifier = Modifier.testTag("sample_photos_toggle_button")
+                            ) {
+                                Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = VeloraViolet, modifier = Modifier.size(13.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Samples", fontSize = 11.sp, color = VeloraViolet)
                             }
 
-                            Row {
-                                if (!isPrimary) {
-                                    IconButton(
-                                        onClick = { onSetPrimaryPhoto(photoUrl) },
-                                        modifier = Modifier.testTag("set_primary_photo_$index")
-                                    ) {
-                                        Icon(
-                                            Icons.Default.StarBorder,
-                                            contentDescription = "Make Primary",
-                                            tint = VeloraGold
-                                        )
+                            // Upload multiple face photos button
+                            Button(
+                                onClick = {
+                                    multiPhotoPickerLauncher.launch(
+                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                    )
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = VeloraPink),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                enabled = !isUploading && user.photos.size < 5,
+                                modifier = Modifier
+                                    .testTag("upload_gallery_photo_button")
+                                    .testTag("upload_face_photos_button")
+                            ) {
+                                Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Add Photos", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Quick Samples Dropdown/Carousel
+                    AnimatedVisibility(visible = showSamplePicker) {
+                        Card(
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 12.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text(
+                                    text = "Tap sample to add to your clear face photos:",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = VeloraTextPrimary
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    items(CloudinaryUploadService.sampleProfilePhotos) { sampleUrl ->
+                                        Box(
+                                            modifier = Modifier
+                                                .size(68.dp)
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .clickable {
+                                                    onUploadSamplePhoto(sampleUrl)
+                                                    showSamplePicker = false
+                                                }
+                                                .border(1.5.dp, VeloraPinkSoft, RoundedCornerShape(12.dp))
+                                        ) {
+                                            AsyncImage(
+                                                model = sampleUrl,
+                                                contentDescription = "Sample avatar",
+                                                modifier = Modifier.fillMaxSize(),
+                                                contentScale = ContentScale.Crop
+                                            )
+                                            Box(
+                                                modifier = Modifier
+                                                    .align(Alignment.BottomEnd)
+                                                    .size(20.dp)
+                                                    .background(VeloraPink, RoundedCornerShape(topStart = 8.dp)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.Add,
+                                                    contentDescription = "Add",
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                            }
+                                        }
                                     }
                                 }
-                                if (user.photos.size > 1) {
-                                    IconButton(
-                                        onClick = { onRemovePhoto(photoUrl) },
-                                        modifier = Modifier.testTag("delete_photo_$index")
+                            }
+                        }
+                    }
+
+                    // 5 Clear Face Photo Slots
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        for (slotIndex in 0 until 5) {
+                            val photoUrl = user.photos.getOrNull(slotIndex)
+                            val isSlotFilled = photoUrl != null
+                            val isPrimary = photoUrl != null && photoUrl == user.effectivePrimaryPhoto
+
+                            if (isSlotFilled) {
+                                Card(
+                                    shape = RoundedCornerShape(14.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        if (isPrimary) 1.5.dp else 1.dp,
+                                        if (isPrimary) VeloraPink else VeloraCardBorder
+                                    ),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("profile_photo_card_$slotIndex")
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Icon(
-                                            Icons.Default.DeleteOutline,
-                                            contentDescription = "Delete Photo",
-                                            tint = VeloraErrorRed
-                                        )
+                                        Box(
+                                            modifier = Modifier
+                                                .size(64.dp)
+                                                .clip(RoundedCornerShape(12.dp))
+                                        ) {
+                                            AsyncImage(
+                                                model = photoUrl,
+                                                contentDescription = "Face Photo ${slotIndex + 1}",
+                                                modifier = Modifier.fillMaxSize(),
+                                                contentScale = ContentScale.Crop
+                                            )
+                                            if (isPrimary) {
+                                                Surface(
+                                                    shape = RoundedCornerShape(bottomEnd = 6.dp),
+                                                    color = VeloraPink,
+                                                    modifier = Modifier.align(Alignment.TopStart)
+                                                ) {
+                                                    Text(
+                                                        text = "PRIMARY",
+                                                        fontSize = 8.sp,
+                                                        fontWeight = FontWeight.Black,
+                                                        color = Color.White,
+                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.width(12.dp))
+
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    text = "Photo ${slotIndex + 1}: Clear Face",
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 13.sp,
+                                                    color = VeloraTextPrimary
+                                                )
+                                                if (isPrimary) {
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Text("(Primary)", fontSize = 11.sp, color = VeloraPink, fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+                                            Text(
+                                                text = if (photoUrl!!.contains("cloudinary.com")) "Cloudinary CDN Verified" else "Clear Face Photo",
+                                                fontSize = 11.sp,
+                                                color = VeloraTextSecondary
+                                            )
+                                            Text(
+                                                text = photoUrl,
+                                                fontSize = 9.sp,
+                                                color = VeloraTextMuted,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+
+                                        Row {
+                                            if (!isPrimary) {
+                                                IconButton(
+                                                    onClick = { onSetPrimaryPhoto(photoUrl!!) },
+                                                    modifier = Modifier
+                                                        .size(36.dp)
+                                                        .testTag("set_primary_photo_$slotIndex")
+                                                ) {
+                                                    Icon(
+                                                        Icons.Default.StarBorder,
+                                                        contentDescription = "Make Primary",
+                                                        tint = VeloraGold,
+                                                        modifier = Modifier.size(18.dp)
+                                                    )
+                                                }
+                                            }
+                                            if (user.photos.size > 1) {
+                                                IconButton(
+                                                    onClick = { onRemovePhoto(photoUrl!!) },
+                                                    modifier = Modifier
+                                                        .size(36.dp)
+                                                        .testTag("delete_photo_$slotIndex")
+                                                ) {
+                                                    Icon(
+                                                        Icons.Default.DeleteOutline,
+                                                        contentDescription = "Delete Photo",
+                                                        tint = VeloraErrorRed,
+                                                        modifier = Modifier.size(18.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                // Empty Slot
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, VeloraCardBorder),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable(enabled = !isUploading) {
+                                            photoPickerLauncher.launch(
+                                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                            )
+                                        }
+                                        .testTag("empty_photo_slot_$slotIndex")
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(64.dp)
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Add,
+                                                contentDescription = "Add face photo",
+                                                tint = VeloraPink,
+                                                modifier = Modifier.size(24.dp)
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(14.dp))
+                                        Column {
+                                            Text(
+                                                text = "Slot ${slotIndex + 1}: Empty Face Photo",
+                                                fontWeight = FontWeight.SemiBold,
+                                                fontSize = 13.sp,
+                                                color = VeloraTextPrimary
+                                            )
+                                            Text(
+                                                text = "Tap to upload clear face photo (${slotIndex + 1} of 5)",
+                                                fontSize = 11.sp,
+                                                color = VeloraTextMuted
+                                            )
+                                        }
                                     }
                                 }
                             }

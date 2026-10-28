@@ -797,12 +797,26 @@ fun SearchFiltersScreen(
             Spacer(modifier = Modifier.height(24.dp))
 
             // Distance
+            val isGlobalSelected = selectedCountry.contains("Global", ignoreCase = true)
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("Distance", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                Text("Within ${maxDistance.toInt()} km", color = VeloraPink, fontWeight = FontWeight.Bold)
+                Text(
+                    text = if (isGlobalSelected) "Worldwide (Global 🌐)" else "Within ${maxDistance.toInt()} km",
+                    color = VeloraPink,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            if (isGlobalSelected) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Global mode active: shows singles from all countries worldwide regardless of distance.",
+                    fontSize = 11.sp,
+                    color = VeloraPink
+                )
             }
             Slider(
                 value = maxDistance,
@@ -839,10 +853,18 @@ fun SearchFiltersScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 listOf("Any", "Bangladesh 🇧🇩", "India 🇮🇳", "Global 🌐").forEach { c ->
+                    val isGlob = c.contains("Global")
+                    val tag = when {
+                        isGlob -> "country_filter_global"
+                        c.contains("Bangladesh") -> "country_filter_bangladesh"
+                        c.contains("India") -> "country_filter_india"
+                        else -> "country_filter_any"
+                    }
                     InterestChip(
                         text = c,
                         isSelected = selectedCountry == c,
-                        onClick = { selectedCountry = c }
+                        onClick = { selectedCountry = c },
+                        modifier = Modifier.testTag(tag)
                     )
                 }
             }

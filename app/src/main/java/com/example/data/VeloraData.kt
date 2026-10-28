@@ -20,8 +20,11 @@ object VeloraData {
         interests = listOf("Travel", "Photography", "Music", "Coffee", "Tech"),
         photos = listOf(
             "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=80",
-            "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=800&q=80"
+            "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=800&q=80",
+            "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=800&q=80",
+            "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=800&q=80"
         ),
+        primaryPhotoUrl = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=80",
         isVerified = true,
         isOnline = true,
         email = "alif.islam@example.com",
@@ -168,6 +171,112 @@ object VeloraData {
             lastActive = "2d ago",
             joinedDate = "04 Oct 2026",
             email = "ibrahim@gmail.com"
+        ),
+        UserProfile(
+            id = "user_priya",
+            name = "Priya Sharma",
+            age = 23,
+            gender = "Woman",
+            city = "Mumbai",
+            country = "India",
+            distanceKm = 1420,
+            profession = "Fashion Stylist",
+            height = "5'5\" (165 cm)",
+            relationshipStatus = "Single",
+            aboutMe = "Exploring world art, fusion fashion, and rooftop sunsets. Believer in spontaneity and good coffee.",
+            interests = listOf("Fashion", "Art", "Bollywood", "Travel", "Yoga"),
+            photos = listOf(
+                "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80",
+                "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80",
+                "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=800&q=80",
+                "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=800&q=80"
+            ),
+            primaryPhotoUrl = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80",
+            isVerified = true,
+            isOnline = true,
+            lastActive = "Online now",
+            joinedDate = "14 Oct 2026",
+            email = "priya.sharma@example.com"
+        ),
+        UserProfile(
+            id = "user_sarah",
+            name = "Sarah Jenkins",
+            age = 25,
+            gender = "Woman",
+            city = "London",
+            country = "Global",
+            distanceKm = 7900,
+            profession = "Product Designer",
+            height = "5'7\" (170 cm)",
+            relationshipStatus = "Looking for connection",
+            aboutMe = "London-based designer wandering globally. Museum nerd, tea connoisseur, and acoustic guitar lover.",
+            interests = listOf("Design", "Museums", "Music", "Travel", "Books"),
+            photos = listOf(
+                "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=800&q=80",
+                "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=800&q=80",
+                "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80",
+                "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?auto=format&fit=crop&w=800&q=80",
+                "https://images.unsplash.com/photo-1508214751196-bcfd4ca60f91?auto=format&fit=crop&w=800&q=80"
+            ),
+            primaryPhotoUrl = "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=800&q=80",
+            isVerified = true,
+            isOnline = true,
+            lastActive = "Just now",
+            joinedDate = "08 Oct 2026",
+            email = "sarah.j@example.com"
+        ),
+        UserProfile(
+            id = "user_ananya",
+            name = "Ananya Sen",
+            age = 22,
+            gender = "Woman",
+            city = "Kolkata",
+            country = "India",
+            distanceKm = 240,
+            profession = "Software Engineer",
+            height = "5'4\" (163 cm)",
+            relationshipStatus = "Single",
+            aboutMe = "Coding by day, baking and book hunting on weekends. Always down for street food adventures.",
+            interests = listOf("Coding", "Baking", "Literature", "Travel", "Anime"),
+            photos = listOf(
+                "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=800&q=80",
+                "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80",
+                "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=800&q=80",
+                "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80"
+            ),
+            primaryPhotoUrl = "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=800&q=80",
+            isVerified = true,
+            isOnline = false,
+            lastActive = "30m ago",
+            joinedDate = "11 Oct 2026",
+            email = "ananya.sen@example.com"
+        ),
+        UserProfile(
+            id = "user_emily",
+            name = "Emily Clarke",
+            age = 24,
+            gender = "Woman",
+            city = "New York",
+            country = "Global",
+            distanceKm = 12600,
+            profession = "Journalist",
+            height = "5'6\" (168 cm)",
+            relationshipStatus = "Single",
+            aboutMe = "Global storyteller fascinated by cultures, culinary traditions, and midnight vinyl records.",
+            interests = listOf("Writing", "Podcasts", "Vinyl", "Global Travel", "Photography"),
+            photos = listOf(
+                "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?auto=format&fit=crop&w=800&q=80",
+                "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80",
+                "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=800&q=80",
+                "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=800&q=80",
+                "https://images.unsplash.com/photo-1508214751196-bcfd4ca60f91?auto=format&fit=crop&w=800&q=80"
+            ),
+            primaryPhotoUrl = "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?auto=format&fit=crop&w=800&q=80",
+            isVerified = true,
+            isOnline = true,
+            lastActive = "Online now",
+            joinedDate = "05 Oct 2026",
+            email = "emily.clarke@example.com"
         )
     )
 

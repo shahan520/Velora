@@ -448,20 +448,46 @@ fun RealTimeCallScreen(
                 elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
             ) {
                 Box(modifier = Modifier.fillMaxSize()) {
-                    AndroidView(
-                        factory = { ctx ->
-                            PreviewView(ctx).apply {
-                                implementationMode = PreviewView.ImplementationMode.COMPATIBLE
-                                scaleType = PreviewView.ScaleType.FILL_CENTER
+                    key(isFrontCamera) {
+                        AndroidView(
+                            factory = { ctx ->
+                                PreviewView(ctx).apply {
+                                    implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+                                    scaleType = PreviewView.ScaleType.FILL_CENTER
+                                    mediaManager?.startCameraPreview(
+                                        lifecycleOwner = lifecycleOwner,
+                                        previewView = this,
+                                        lensFacing = if (isFrontCamera) CameraSelector.LENS_FACING_FRONT else CameraSelector.LENS_FACING_BACK
+                                    )
+                                }
+                            },
+                            update = { pv ->
                                 mediaManager?.startCameraPreview(
                                     lifecycleOwner = lifecycleOwner,
-                                    previewView = this,
+                                    previewView = pv,
                                     lensFacing = if (isFrontCamera) CameraSelector.LENS_FACING_FRONT else CameraSelector.LENS_FACING_BACK
                                 )
-                            }
-                        },
-                        modifier = Modifier.fillMaxSize()
-                    )
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+
+                    // Camera indicator badge (FRONT / BACK)
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(6.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color.Black.copy(alpha = 0.65f)
+                    ) {
+                        Text(
+                            text = if (isFrontCamera) "FRONT" else "BACK",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
 
                     // Flip camera shortcut on PIP
                     IconButton(
@@ -472,6 +498,7 @@ fun RealTimeCallScreen(
                             .size(32.dp)
                             .clip(CircleShape)
                             .background(Color.Black.copy(alpha = 0.5f))
+                            .testTag("pip_camera_flip_button")
                     ) {
                         Icon(
                             imageVector = Icons.Default.FlipCameraAndroid,

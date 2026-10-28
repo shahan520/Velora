@@ -234,6 +234,8 @@ fun VeloraAppRoot(viewModel: VeloraViewModel) {
                         uploadStatus = uiState.photoUploadStatus,
                         lastUploadedUrl = uiState.lastUploadedCdnUrl,
                         onUploadPhotoUri = { uri -> viewModel.uploadPhotoFromUri(context, uri) },
+                        onUploadPrimaryPhotoUri = { uri -> viewModel.uploadPrimaryPhotoFromUri(context, uri) },
+                        onUploadMultiplePhotos = { uris -> viewModel.uploadMultiplePhotosFromUris(context, uris) },
                         onUploadSamplePhoto = { sampleUrl -> viewModel.uploadSamplePhoto(sampleUrl) },
                         onSetPrimaryPhoto = { url -> viewModel.setPrimaryPhoto(url) },
                         onRemovePhoto = { url -> viewModel.removePhoto(url) },

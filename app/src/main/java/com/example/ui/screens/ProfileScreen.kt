@@ -75,7 +75,7 @@ fun ProfileScreen(
                         .testTag("profile_avatar_box")
                 ) {
                     AsyncImage(
-                        model = user.photos.firstOrNull(),
+                        model = user.effectivePrimaryPhoto,
                         contentDescription = user.name,
                         modifier = Modifier
                             .size(78.dp)

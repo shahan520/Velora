@@ -620,7 +620,7 @@ fun RegistrationScreen(
 ) {
     var name by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
-    var phone by remember { mutableStateOf("+880 ") }
+    var phone by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
 
@@ -706,9 +706,9 @@ fun RegistrationScreen(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Full Name Input
+            // Name Input
             Text(
-                text = "Full Name",
+                text = "Name",
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = VeloraTextSecondary
@@ -717,7 +717,7 @@ fun RegistrationScreen(
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                placeholder = { Text("e.g. Alif Islam") },
+                placeholder = { Text("Enter your name") },
                 leadingIcon = {
                     Icon(imageVector = Icons.Default.Person, contentDescription = "Name", tint = VeloraPink)
                 },
@@ -732,7 +732,7 @@ fun RegistrationScreen(
 
             // Email Input
             Text(
-                text = "Email Address",
+                text = "Email",
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = VeloraTextSecondary
@@ -741,7 +741,7 @@ fun RegistrationScreen(
             OutlinedTextField(
                 value = email,
                 onValueChange = { email = it },
-                placeholder = { Text("e.g. alif@example.com") },
+                placeholder = { Text("Enter your email") },
                 leadingIcon = {
                     Icon(imageVector = Icons.Default.Email, contentDescription = "Email", tint = VeloraPink)
                 },
@@ -757,7 +757,7 @@ fun RegistrationScreen(
 
             // Phone Number Input
             Text(
-                text = "Phone Number (SMS OTP Required)",
+                text = "Phone Number",
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = VeloraTextSecondary
@@ -766,9 +766,9 @@ fun RegistrationScreen(
             OutlinedTextField(
                 value = phone,
                 onValueChange = { phone = it },
-                placeholder = { Text("+880 1812-345678") },
+                placeholder = { Text("Enter your phone number") },
                 leadingIcon = {
-                    Icon(imageVector = Icons.Default.Phone, contentDescription = "Phone", tint = VeloraPink)
+                    Icon(imageVector = Icons.Default.Phone, contentDescription = "Phone Number", tint = VeloraPink)
                 },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                 singleLine = true,
@@ -782,7 +782,7 @@ fun RegistrationScreen(
 
             // Password Input
             Text(
-                text = "Password (min 6 characters)",
+                text = "Password",
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = VeloraTextSecondary
@@ -791,7 +791,7 @@ fun RegistrationScreen(
             OutlinedTextField(
                 value = password,
                 onValueChange = { password = it },
-                placeholder = { Text("••••••••") },
+                placeholder = { Text("Enter your password") },
                 leadingIcon = {
                     Icon(imageVector = Icons.Default.Lock, contentDescription = "Password", tint = VeloraPink)
                 },

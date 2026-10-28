@@ -176,22 +176,31 @@ class CallMediaManager(private val context: Context) {
         cameraProviderFuture.addListener({
             try {
                 cameraProvider = cameraProviderFuture.get()
+                cameraProvider?.unbindAll()
+
+                val hasFront = cameraProvider?.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA) == true
+                val hasBack = cameraProvider?.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA) == true
+
+                val selectedSelector = when {
+                    lensFacing == CameraSelector.LENS_FACING_BACK && hasBack -> CameraSelector.DEFAULT_BACK_CAMERA
+                    lensFacing == CameraSelector.LENS_FACING_FRONT && hasFront -> CameraSelector.DEFAULT_FRONT_CAMERA
+                    hasFront -> CameraSelector.DEFAULT_FRONT_CAMERA
+                    hasBack -> CameraSelector.DEFAULT_BACK_CAMERA
+                    else -> CameraSelector.DEFAULT_FRONT_CAMERA
+                }
+
                 val preview = Preview.Builder().build().also {
                     it.setSurfaceProvider(previewView.surfaceProvider)
                 }
 
-                val cameraSelector = CameraSelector.Builder()
-                    .requireLensFacing(currentLensFacing)
-                    .build()
-
-                cameraProvider?.unbindAll()
-                cameraProvider?.bindToLifecycle(lifecycleOwner, cameraSelector, preview)
+                cameraProvider?.bindToLifecycle(lifecycleOwner, selectedSelector, preview)
                 onCameraReady()
+                Log.d("CallMediaManager", "Bound camera successfully with lensFacing=$lensFacing")
             } catch (e: Exception) {
                 Log.w("CallMediaManager", "startCameraPreview failed: ${e.message}")
                 // Fallback to whatever camera is available
                 try {
-                    val fallbackSelector = CameraSelector.DEFAULT_BACK_CAMERA
+                    val fallbackSelector = CameraSelector.DEFAULT_FRONT_CAMERA
                     val preview = Preview.Builder().build().also {
                         it.setSurfaceProvider(previewView.surfaceProvider)
                     }
@@ -208,14 +217,19 @@ class CallMediaManager(private val context: Context) {
     /**
      * Flips camera between front and back.
      */
-    fun flipCamera(lifecycleOwner: LifecycleOwner, previewView: PreviewView) {
+    fun flipCamera(lifecycleOwner: LifecycleOwner? = null, previewView: PreviewView? = null) {
         val nextFacing = if (currentLensFacing == CameraSelector.LENS_FACING_FRONT) {
             CameraSelector.LENS_FACING_BACK
         } else {
             CameraSelector.LENS_FACING_FRONT
         }
-        startCameraPreview(lifecycleOwner, previewView, nextFacing)
+        currentLensFacing = nextFacing
+        if (lifecycleOwner != null && previewView != null) {
+            startCameraPreview(lifecycleOwner, previewView, nextFacing)
+        }
     }
+
+    fun getCurrentLensFacing(): Int = currentLensFacing
 
     /**
      * Stops camera preview.
