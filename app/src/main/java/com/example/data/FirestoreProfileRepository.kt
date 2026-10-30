@@ -129,13 +129,13 @@ object FirestoreProfileRepository {
 
             val token = com.example.server.ServerTokenManager.createToken(
                 userId = userId,
-                email = currentProfile.email.ifBlank { "alif@example.com" },
+                email = currentProfile.email.ifBlank { "alif.islam@example.com" },
                 role = com.example.server.Role.USER
             )
             VeloraBackendServer.updateUserProfile(
                 authHeader = "Bearer $token",
                 targetUserId = userId,
-                updates = UserProfileUpdate(photos = updatedPhotos)
+                updates = UserProfileUpdate(photos = updatedPhotos, primaryPhotoUrl = primaryUrl)
             )
 
             val updatedProfile = currentProfile.copy(
@@ -143,6 +143,7 @@ object FirestoreProfileRepository {
                 photos = updatedPhotos
             )
             VeloraData.currentUser = updatedProfile
+            SessionManager.saveUserSession(profile = updatedProfile)
             Result.success(updatedProfile)
         } catch (e: Exception) {
             logError(TAG, "Error saving primary photo to Firestore: ${e.message}", e)
@@ -181,13 +182,13 @@ object FirestoreProfileRepository {
 
             val token = com.example.server.ServerTokenManager.createToken(
                 userId = userId,
-                email = currentProfile.email.ifBlank { "alif@example.com" },
+                email = currentProfile.email.ifBlank { "alif.islam@example.com" },
                 role = com.example.server.Role.USER
             )
             VeloraBackendServer.updateUserProfile(
                 authHeader = "Bearer $token",
                 targetUserId = userId,
-                updates = UserProfileUpdate(photos = combined)
+                updates = UserProfileUpdate(photos = combined, primaryPhotoUrl = primary)
             )
 
             val updatedProfile = currentProfile.copy(
@@ -195,9 +196,61 @@ object FirestoreProfileRepository {
                 primaryPhotoUrl = primary
             )
             VeloraData.currentUser = updatedProfile
+            SessionManager.saveUserSession(profile = updatedProfile)
             Result.success(updatedProfile)
         } catch (e: Exception) {
             logError(TAG, "Error saving multiple photos: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Updates and synchronizes user profile bio/aboutMe, profession, and city to Cloud Firestore.
+     */
+    suspend fun saveProfileDetails(
+        userId: String = VeloraData.currentUser.id,
+        aboutMe: String,
+        profession: String,
+        city: String
+    ): Result<UserProfile> = withContext(Dispatchers.IO) {
+        try {
+            val currentProfile = VeloraData.currentUser
+            try {
+                val firestore = FirebaseFirestore.getInstance()
+                val userDocRef = firestore.collection(USERS_COLLECTION).document(userId)
+                val updates = hashMapOf<String, Any>(
+                    "aboutMe" to aboutMe,
+                    "profession" to profession,
+                    "city" to city,
+                    "updatedAt" to System.currentTimeMillis()
+                )
+                userDocRef.set(updates, SetOptions.merge()).awaitTaskResult()
+                logInfo(TAG, "Successfully synced profile details to Firestore /users/$userId")
+            } catch (e: Exception) {
+                logWarn(TAG, "Firestore details sync note: ${e.message}")
+            }
+
+            val token = com.example.server.ServerTokenManager.createToken(
+                userId = userId,
+                email = currentProfile.email.ifBlank { "alif.islam@example.com" },
+                role = com.example.server.Role.USER
+            )
+            val serverResp = VeloraBackendServer.updateUserProfile(
+                authHeader = "Bearer $token",
+                targetUserId = userId,
+                updates = UserProfileUpdate(aboutMe = aboutMe, profession = profession, city = city)
+            )
+
+            val updatedProfile = currentProfile.copy(
+                aboutMe = aboutMe,
+                profession = profession,
+                city = city
+            )
+            VeloraData.currentUser = updatedProfile
+            SessionManager.saveUserSession(profile = updatedProfile)
+            Result.success(serverResp.data ?: updatedProfile)
+        } catch (e: Exception) {
+            logError(TAG, "Error saving profile details: ${e.message}", e)
             Result.failure(e)
         }
     }
@@ -238,19 +291,20 @@ object FirestoreProfileRepository {
 
             val token = com.example.server.ServerTokenManager.createToken(
                 userId = userId,
-                email = currentProfile.email.ifBlank { "alif@example.com" },
+                email = currentProfile.email.ifBlank { "alif.islam@example.com" },
                 role = com.example.server.Role.USER
             )
             VeloraBackendServer.updateUserProfile(
                 authHeader = "Bearer $token",
                 targetUserId = userId,
-                updates = UserProfileUpdate(photos = updatedPhotos)
+                updates = UserProfileUpdate(photos = updatedPhotos, primaryPhotoUrl = updatedPrimary)
             )
 
             VeloraData.currentUser = VeloraData.currentUser.copy(
                 photos = updatedPhotos,
                 primaryPhotoUrl = updatedPrimary
             )
+            SessionManager.saveUserSession(profile = VeloraData.currentUser)
             Result.success(updatedPhotos)
         } catch (e: Exception) {
             Result.failure(e)
@@ -281,10 +335,22 @@ object FirestoreProfileRepository {
                 logWarn(TAG, "Firestore setPrimaryPhoto note: ${e.message}")
             }
 
+            val token = com.example.server.ServerTokenManager.createToken(
+                userId = userId,
+                email = currentProfile.email.ifBlank { "alif.islam@example.com" },
+                role = com.example.server.Role.USER
+            )
+            VeloraBackendServer.updateUserProfile(
+                authHeader = "Bearer $token",
+                targetUserId = userId,
+                updates = UserProfileUpdate(photos = updatedPhotos, primaryPhotoUrl = primaryUrl)
+            )
+
             VeloraData.currentUser = VeloraData.currentUser.copy(
                 photos = updatedPhotos,
                 primaryPhotoUrl = primaryUrl
             )
+            SessionManager.saveUserSession(profile = VeloraData.currentUser)
             Result.success(updatedPhotos)
         } catch (e: Exception) {
             Result.failure(e)

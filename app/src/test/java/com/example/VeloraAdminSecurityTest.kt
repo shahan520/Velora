@@ -1109,5 +1109,103 @@ class VeloraAdminSecurityTest {
         assertTrue("India filter must find profiles in India", indiaProfiles.isNotEmpty())
         assertTrue("All returned profiles must be in India", indiaProfiles.all { it.country.equals("India", ignoreCase = true) })
     }
+
+    // --- TEST 34: Active User Status Checks Allow Profile & Photo Updates Without "Inactive or Revoked" Error ---
+    @Test
+    fun test34_accountActiveStatus_allowsActiveUserToUpdateProfileAndPhotosWithoutInactiveError() {
+        // Active user with email alif.islam@example.com (matching VeloraData.currentUser)
+        val token = com.example.server.ServerTokenManager.createToken(
+            userId = "user_me",
+            email = "alif.islam@example.com",
+            role = com.example.server.Role.USER
+        )
+
+        // 1. Updating profile details (aboutMe, profession, city) must succeed (HTTP 200, NOT 403 inactive error)
+        val detailsResponse = com.example.server.VeloraBackendServer.updateUserProfile(
+            authHeader = "Bearer $token",
+            targetUserId = "user_me",
+            updates = com.example.server.UserProfileUpdate(
+                aboutMe = "Passionate traveler & tech enthusiast.",
+                profession = "Lead Android Engineer",
+                city = "Dhaka"
+            )
+        )
+        assertTrue("Active user details update should succeed", detailsResponse.isSuccessful)
+        assertEquals(200, detailsResponse.statusCode)
+        assertFalse("Must NOT return account inactive error", detailsResponse.message.contains("inactive or revoked", ignoreCase = true))
+        assertEquals("Lead Android Engineer", detailsResponse.data?.profession)
+
+        // 2. Updating profile photos & setting primary photo must succeed
+        val newPhotoUrls = listOf(
+            "https://res.cloudinary.com/yrqulncp/image/upload/v1/profile_1.jpg",
+            "https://res.cloudinary.com/yrqulncp/image/upload/v1/profile_2.jpg",
+            "https://res.cloudinary.com/yrqulncp/image/upload/v1/profile_3.jpg",
+            "https://res.cloudinary.com/yrqulncp/image/upload/v1/profile_4.jpg"
+        )
+        val photosResponse = com.example.server.VeloraBackendServer.updateUserProfile(
+            authHeader = "Bearer $token",
+            targetUserId = "user_me",
+            updates = com.example.server.UserProfileUpdate(
+                photos = newPhotoUrls,
+                primaryPhotoUrl = newPhotoUrls[0]
+            )
+        )
+        assertTrue("Active user photo update should succeed", photosResponse.isSuccessful)
+        assertEquals(200, photosResponse.statusCode)
+        assertEquals(newPhotoUrls[0], photosResponse.data?.primaryPhotoUrl)
+        assertEquals(4, photosResponse.data?.photos?.size)
+    }
+
+    // --- TEST 35: Active User Status Checks Allow Profile Details Updates Without Inactive Account Error ---
+    @Test
+    fun test35_activeUserStatus_allowsProfileDetailsUpdates() {
+        val userToken = com.example.server.ServerTokenManager.createToken(
+            userId = "user_me",
+            email = "alif.islam@example.com",
+            role = com.example.server.Role.USER
+        )
+
+        val updateResult = com.example.server.VeloraBackendServer.updateUserProfile(
+            authHeader = "Bearer $userToken",
+            targetUserId = "user_me",
+            updates = com.example.server.UserProfileUpdate(
+                aboutMe = "Updated bio for active user",
+                profession = "Lead Architect",
+                city = "Dhaka"
+            )
+        )
+        assertTrue("Profile details update must succeed", updateResult.isSuccessful)
+        assertEquals(200, updateResult.statusCode)
+        assertFalse("Must NOT return account inactive error", updateResult.message.contains("inactive or revoked", ignoreCase = true))
+        assertEquals("Lead Architect", updateResult.data?.profession)
+    }
+
+    // --- TEST 36: Cloudinary Upload Generates Secure HTTPS CDN URLs and Syncs to Firestore ---
+    @Test
+    fun test36_cloudinaryCdnUrl_returnsSecureHttpsUrlAndSyncsToFirestore() = kotlinx.coroutines.runBlocking {
+        val dummyBytes = "sample_raw_image_bytes_content".toByteArray()
+        val uploadResult = com.example.service.CloudinaryUploadService.uploadImageBytes(
+            imageBytes = dummyBytes,
+            fileName = "face_photo_test.jpg",
+            mimeType = "image/jpeg"
+        )
+
+        assertTrue("Upload result must be Success", uploadResult is com.example.service.UploadResult.Success)
+        val cdnUrl = (uploadResult as com.example.service.UploadResult.Success).secureUrl
+        assertNotNull(cdnUrl)
+        assertTrue("Uploaded photo URL must be an HTTPS Cloudinary CDN URL", cdnUrl.startsWith("https://res.cloudinary.com/"))
+        assertFalse("Uploaded photo URL must NOT be a bulky base64 data URI", cdnUrl.startsWith("data:"))
+
+        // Verify Firestore profile repository sync
+        val syncResult = com.example.data.FirestoreProfileRepository.savePrimaryPhotoUrl(
+            userId = "user_me",
+            primaryUrl = cdnUrl
+        )
+        assertTrue("Firestore primary photo sync must succeed", syncResult.isSuccess)
+        val updatedProfile = syncResult.getOrNull()
+        assertNotNull(updatedProfile)
+        assertEquals(cdnUrl, updatedProfile!!.primaryPhotoUrl)
+        assertEquals(cdnUrl, updatedProfile.photos.first())
+    }
 }
 

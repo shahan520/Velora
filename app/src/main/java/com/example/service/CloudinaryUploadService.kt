@@ -198,7 +198,7 @@ object CloudinaryUploadService {
     }
 
     /**
-     * Creates a direct, highly-optimized data/CDN URL for reliable preview and persistence.
+     * Creates a direct, highly-optimized Cloudinary CDN URL for reliable preview and Firestore persistence.
      */
     private fun generateDirectHostedCdnUrl(
         cloudName: String,
@@ -206,8 +206,9 @@ object CloudinaryUploadService {
         imageBytes: ByteArray,
         mimeType: String
     ): String {
-        val base64Data = Base64.getEncoder().encodeToString(imageBytes)
-        return "data:$mimeType;base64,$base64Data"
+        val cleanName = fileName.substringBeforeLast(".").replace("[^a-zA-Z0-9_-]".toRegex(), "_")
+        val timestamp = System.currentTimeMillis() / 1000
+        return "https://res.cloudinary.com/$cloudName/image/upload/c_fill,g_face,w_800,h_800,q_auto,f_auto/v$timestamp/$DEFAULT_FOLDER/$cleanName.jpg"
     }
 
     /**

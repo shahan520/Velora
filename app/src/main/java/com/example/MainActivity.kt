@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.FirebaseAuthRepository
+import com.example.data.SessionManager
 import com.example.model.Screen
 import com.example.ui.components.VeloraBottomBar
 import com.example.ui.screens.*
@@ -37,7 +38,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         FirebaseAuthRepository.initialize(applicationContext)
+        SessionManager.initialize(applicationContext)
         viewModel.bindMediaManager(applicationContext)
+        viewModel.restoreSession(applicationContext)
         enableEdgeToEdge()
         handleIntent(intent)
         setContent {

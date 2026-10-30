@@ -135,4 +135,46 @@ class CloudinaryImageUploadTest {
         val removeLastResult = FirestoreProfileRepository.removeProfilePhoto("user_me", photo2)
         assertFalse("Cannot remove last photo", removeLastResult.isSuccess)
     }
+
+    @Test
+    fun test7_sessionPersistence_restoresUserSessionAndPreventsAutoLogout() {
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        com.example.data.SessionManager.initialize(context)
+
+        // 1. Save user session (simulate active login)
+        val testProfile = com.example.data.VeloraData.currentUser.copy(
+            id = "user_me",
+            name = "Alif Islam",
+            email = "alif.islam@example.com",
+            aboutMe = "Active persistent member"
+        )
+        com.example.data.SessionManager.saveUserSession(
+            context = context,
+            profile = testProfile,
+            isPhoneVerified = true,
+            isEmailVerified = true,
+            isAgeVerified = true,
+            lastScreen = com.example.model.Screen.MAIN_DISCOVER
+        )
+
+        // 2. Verify SessionManager reflects logged in state
+        assertTrue("SessionManager must report logged in", com.example.data.SessionManager.isLoggedIn(context))
+        val restored = com.example.data.SessionManager.restoreUserSession(context)
+        assertNotNull("Restored profile must not be null", restored)
+        assertEquals("Alif Islam", restored!!.name)
+        assertEquals("alif.islam@example.com", restored.email)
+
+        // 3. Create a fresh ViewModel and restore session (simulating app process restart / resume from background)
+        val viewModel = com.example.viewmodel.VeloraViewModel()
+        assertEquals("Before restore, default screen is SPLASH", com.example.model.Screen.SPLASH, viewModel.uiState.value.currentScreen)
+
+        viewModel.restoreSession(context)
+
+        // User must be kept logged in without needing to re-login or re-verify OTP
+        assertTrue("User must stay logged in after restore", viewModel.uiState.value.isLoggedIn)
+        assertTrue("Phone verification must stay intact", viewModel.uiState.value.isPhoneVerified)
+        assertTrue("Email verification must stay intact", viewModel.uiState.value.isEmailVerified)
+        assertTrue("Age verification must stay intact", viewModel.uiState.value.isAgeVerified)
+        assertEquals("User should land on MAIN_DISCOVER without seeing Splash or OTP screens", com.example.model.Screen.MAIN_DISCOVER, viewModel.uiState.value.currentScreen)
+    }
 }

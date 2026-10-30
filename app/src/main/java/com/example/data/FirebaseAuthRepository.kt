@@ -97,17 +97,26 @@ object FirebaseAuthRepository {
                     val authResult = auth.createUserWithEmailAndPassword(email, pass).awaitTaskResult()
                     firebaseUid = authResult.user?.uid
                     logInfo("Created Firebase Auth account: $email (UID: $firebaseUid)")
-                } catch (collision: FirebaseAuthUserCollisionException) {
-                    // If user already exists in Firebase Auth, sign in to link the session
-                    logInfo("Account exists in Firebase Auth, signing in: $email")
-                    try {
-                        val signResult = auth.signInWithEmailAndPassword(email, pass).awaitTaskResult()
-                        firebaseUid = signResult.user?.uid
-                    } catch (signErr: Exception) {
-                        logWarn("Firebase Auth sign in on collision note: ${signErr.message}")
+                } catch (e: Exception) {
+                    val isCollision = e is FirebaseAuthUserCollisionException ||
+                            e.message?.contains("already in use", ignoreCase = true) == true ||
+                            e.message?.contains("email_already_in_use", ignoreCase = true) == true ||
+                            e.message?.contains("already exists", ignoreCase = true) == true
+
+                    if (isCollision) {
+                        logInfo("Account already registered in Firebase Auth: $email. Linking session...")
+                        try {
+                            val signResult = auth.signInWithEmailAndPassword(email, pass).awaitTaskResult()
+                            firebaseUid = signResult.user?.uid
+                        } catch (signErr: Exception) {
+                            logWarn("Account exists in Firebase Auth with different credentials: ${signErr.message}")
+                            return@withContext Result.failure(
+                                IllegalStateException("The email address is already in use by another account. Please log in.")
+                            )
+                        }
+                    } else {
+                        logWarn("Firebase Auth create error: ${e.message}. Proceeding with sync.")
                     }
-                } catch (authError: Exception) {
-                    logWarn("Firebase Auth create error: ${authError.message}. Proceeding with sync.")
                 }
             }
 
@@ -197,13 +206,22 @@ object FirebaseAuthRepository {
                     user = authResult.user
                     logInfo("Firebase Auth signIn successful: ${user?.email} (${user?.uid})")
                 } catch (e: Exception) {
-                    // If user doesn't exist, create it automatically
-                    logInfo("Account not found in Firebase Auth during login, creating: $email")
-                    try {
-                        val createResult = auth.createUserWithEmailAndPassword(email, pass).awaitTaskResult()
-                        user = createResult.user
-                    } catch (createErr: Exception) {
-                        logWarn("Firebase Auth create on login note: ${createErr.message}")
+                    val isUserNotFound = e is com.google.firebase.auth.FirebaseAuthInvalidUserException ||
+                            e.message?.contains("no user record", ignoreCase = true) == true ||
+                            e.message?.contains("user-not-found", ignoreCase = true) == true ||
+                            e.message?.contains("not found", ignoreCase = true) == true
+
+                    if (isUserNotFound) {
+                        // User truly doesn't exist in Firebase Auth yet, provision new account
+                        logInfo("Account not found in Firebase Auth during login, creating: $email")
+                        try {
+                            val createResult = auth.createUserWithEmailAndPassword(email, pass).awaitTaskResult()
+                            user = createResult.user
+                        } catch (createErr: Exception) {
+                            logWarn("Firebase Auth create on login note: ${createErr.message}")
+                        }
+                    } else {
+                        logWarn("Firebase Auth signIn failed (omitting duplicate createUser): ${e.message}")
                     }
                 }
 

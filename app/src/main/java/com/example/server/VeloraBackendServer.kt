@@ -70,6 +70,19 @@ object VeloraBackendServer {
             )
         )
         put(
+            "alif.islam@example.com",
+            ServerUser(
+                id = "user_me",
+                email = "alif.islam@example.com",
+                passwordHash = "userpass123",
+                role = Role.USER,
+                displayName = "Alif Islam",
+                isEmailVerified = true,
+                isPhoneVerified = true,
+                phone = "+880 1712-345678"
+            )
+        )
+        put(
             "user@example.com",
             ServerUser(
                 id = "user_guest",
@@ -622,8 +635,51 @@ object VeloraBackendServer {
             )
         }
 
-        val serverUser = usersRegistry[payload.email.lowercase()]
-        if (serverUser == null || serverUser.isSuspended) {
+        val normalizedEmail = payload.email.trim().lowercase()
+        var serverUser = usersRegistry[normalizedEmail]
+            ?: usersRegistry.values.firstOrNull { it.id == payload.userId }
+
+        // If not in in-memory registry, look up active user profile to resolve account state
+        if (serverUser == null) {
+            val profile = serverProfiles[payload.userId]
+                ?: (if (payload.userId == VeloraData.currentUser.id) VeloraData.currentUser else null)
+            if (profile != null) {
+                val activeUser = ServerUser(
+                    id = payload.userId,
+                    email = normalizedEmail,
+                    passwordHash = "",
+                    role = payload.role,
+                    displayName = profile.name,
+                    isSuspended = profile.isSuspended,
+                    isVerified = profile.isVerified,
+                    isPremium = profile.isPremium,
+                    moderationStatus = if (profile.isSuspended) "SUSPENDED" else "ACTIVE",
+                    isEmailVerified = profile.isEmailVerified,
+                    isPhoneVerified = profile.isPhoneVerified,
+                    phone = profile.phone
+                )
+                usersRegistry[normalizedEmail] = activeUser
+                serverUser = activeUser
+            } else if (payload.userId.isNotBlank()) {
+                val activeUser = ServerUser(
+                    id = payload.userId,
+                    email = normalizedEmail,
+                    passwordHash = "",
+                    role = payload.role,
+                    displayName = "Velora Member",
+                    isSuspended = false,
+                    isVerified = false,
+                    isPremium = false,
+                    moderationStatus = "ACTIVE",
+                    isEmailVerified = true,
+                    isPhoneVerified = true
+                )
+                usersRegistry[normalizedEmail] = activeUser
+                serverUser = activeUser
+            }
+        }
+
+        if (serverUser == null || serverUser.isSuspended || serverUser.moderationStatus.equals("SUSPENDED", ignoreCase = true)) {
             logAuditEvent("ACCESS BLOCKED: User '${payload.email}' account is suspended or inactive in server registry.")
             return Pair(
                 ServerResponse(
@@ -1072,6 +1128,8 @@ object VeloraBackendServer {
         }
 
         val existingProfile = serverProfiles[targetUserId]
+            ?: (if (targetUserId == VeloraData.currentUser.id) VeloraData.currentUser else null)
+            ?: VeloraData.discoverProfiles.firstOrNull { it.id == targetUserId }
             ?: return ServerResponse(statusCode = 404, message = "User not found.", error = "Not Found")
 
         val updatedProfile = existingProfile.copy(
@@ -1080,11 +1138,15 @@ object VeloraBackendServer {
             city = updates.city ?: existingProfile.city,
             interests = updates.interests ?: existingProfile.interests,
             photos = updates.photos ?: existingProfile.photos,
+            primaryPhotoUrl = updates.primaryPhotoUrl ?: (if (!updates.photos.isNullOrEmpty()) updates.photos.first() else existingProfile.primaryPhotoUrl),
             isVerified = if (isCallerAdmin && updates.isVerified != null) updates.isVerified else existingProfile.isVerified,
             isPremium = if (isCallerAdmin && updates.isPremium != null) updates.isPremium else existingProfile.isPremium
         )
 
         serverProfiles[targetUserId] = updatedProfile
+        if (targetUserId == VeloraData.currentUser.id) {
+            VeloraData.currentUser = updatedProfile
+        }
         logAuditEvent("PROFILE UPDATED: User '$targetUserId' updated by '${payload?.email}'")
 
         return ServerResponse(

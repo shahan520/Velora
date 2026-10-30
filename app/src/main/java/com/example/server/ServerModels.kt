@@ -76,6 +76,7 @@ data class UserProfileUpdate(
     val city: String? = null,
     val interests: List<String>? = null,
     val photos: List<String>? = null,
+    val primaryPhotoUrl: String? = null,
     // Privileged fields (attempted update must be blocked for ordinary users)
     val role: Role? = null,
     val isVerified: Boolean? = null,

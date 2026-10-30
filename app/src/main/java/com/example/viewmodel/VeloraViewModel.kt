@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.CallSignalingRepository
 import com.example.data.FirebaseAuthRepository
 import com.example.data.FirestoreProfileRepository
+import com.example.data.SessionManager
 import com.example.data.VeloraData
 import com.example.media.CallMediaManager
 import com.example.model.*
@@ -126,9 +127,55 @@ class VeloraViewModel : ViewModel() {
         startObservingIncomingCalls(_uiState.value.currentUserProfile.id)
     }
 
+    private var appContext: Context? = null
+
     fun bindMediaManager(context: Context) {
+        appContext = context.applicationContext
+        SessionManager.initialize(context)
         if (mediaManager == null) {
             mediaManager = CallMediaManager(context.applicationContext)
+        }
+    }
+
+    /**
+     * Restore user session from persistent storage (SharedPreferences) or Firebase Auth.
+     * Prevents auto-logout when the app is minimized, backgrounded, or restarted.
+     */
+    fun restoreSession(context: Context) {
+        appContext = context.applicationContext
+        SessionManager.initialize(context)
+        val isPersistedLoggedIn = SessionManager.isLoggedIn(context)
+        val firebaseAuthUser = try { FirebaseAuthRepository.getAuth()?.currentUser } catch (_: Throwable) { null }
+
+        if (isPersistedLoggedIn || firebaseAuthUser != null) {
+            val restoredProfile = SessionManager.restoreUserSession(context) ?: VeloraData.currentUser.let { base ->
+                if (firebaseAuthUser != null) {
+                    base.copy(
+                        id = firebaseAuthUser.uid,
+                        name = firebaseAuthUser.displayName ?: base.name,
+                        email = firebaseAuthUser.email ?: base.email
+                    )
+                } else base
+            }
+
+            VeloraData.currentUser = restoredProfile
+            val lastScreen = SessionManager.getLastScreen(context)
+            val targetScreen = if (lastScreen in listOf(Screen.SPLASH, Screen.WELCOME, Screen.REGISTRATION, Screen.PHONE_OTP_VERIFICATION, Screen.EMAIL_VERIFICATION)) {
+                Screen.MAIN_DISCOVER
+            } else {
+                lastScreen
+            }
+
+            _uiState.update {
+                it.copy(
+                    isLoggedIn = true,
+                    isPhoneVerified = true,
+                    isEmailVerified = true,
+                    isAgeVerified = true,
+                    currentUserProfile = restoredProfile,
+                    currentScreen = targetScreen
+                )
+            }
         }
     }
 
@@ -200,6 +247,7 @@ class VeloraViewModel : ViewModel() {
                 currentScreen = screen
             )
         }
+        appContext?.let { SessionManager.updateActiveScreen(it, screen) }
     }
 
     fun handleRoute(route: String) {
@@ -349,7 +397,20 @@ class VeloraViewModel : ViewModel() {
             }
 
             // Immediately create the account in Firebase Authentication & Cloud Firestore
-            FirebaseAuthRepository.registerAndSyncUser(name, email, phone, pass)
+            val syncResult = FirebaseAuthRepository.registerAndSyncUser(name, email, phone, pass)
+            if (syncResult.isFailure) {
+                val err = syncResult.exceptionOrNull()?.message.orEmpty()
+                if (err.contains("already in use", ignoreCase = true) || err.contains("already exists", ignoreCase = true)) {
+                    _uiState.update {
+                        it.copy(
+                            registrationError = "The email address is already in use by another account. Please log in.",
+                            authSuccessMessage = null
+                        )
+                    }
+                    showToast("This email is already in use. Please log in.")
+                    return@launch
+                }
+            }
 
             val user = response.data
             val pendingPhoneOtp = VeloraBackendServer.getPendingPhoneOtp(user.phone)
@@ -499,6 +560,7 @@ class VeloraViewModel : ViewModel() {
                         currentScreen = Screen.MAIN_DISCOVER
                     )
                 }
+                appContext?.let { SessionManager.saveUserSession(it, _uiState.value.currentUserProfile) }
                 showToast("Welcome back! Connected to Firebase.")
             } else if (response.error == "PHONE_NOT_VERIFIED") {
                 _uiState.update {
@@ -557,6 +619,7 @@ class VeloraViewModel : ViewModel() {
                 currentScreen = Screen.MAIN_DISCOVER
             )
         }
+        appContext?.let { SessionManager.saveUserSession(it, _uiState.value.currentUserProfile) }
         showToast("Verification complete! Welcome to Velora.")
     }
 
@@ -578,6 +641,7 @@ class VeloraViewModel : ViewModel() {
                     currentScreen = Screen.MAIN_DISCOVER
                 )
             }
+            appContext?.let { SessionManager.saveUserSession(it, VeloraData.currentUser) }
             showToast("Signed in! Firebase account synchronized.")
         }
     }
@@ -1762,33 +1826,45 @@ class VeloraViewModel : ViewModel() {
     fun updateProfileDetails(aboutMe: String, profession: String, city: String) {
         viewModelScope.launch {
             val currentUserId = _uiState.value.currentUserProfile.id
-            val token = com.example.server.ServerTokenManager.createToken(
+            val firestoreResult = FirestoreProfileRepository.saveProfileDetails(
                 userId = currentUserId,
-                email = _uiState.value.currentUserProfile.email.ifBlank { "alif@example.com" },
-                role = com.example.server.Role.USER
+                aboutMe = aboutMe.trim(),
+                profession = profession.trim(),
+                city = city.trim()
             )
 
-            val response = VeloraBackendServer.updateUserProfile(
-                authHeader = "Bearer $token",
-                targetUserId = currentUserId,
-                updates = com.example.server.UserProfileUpdate(
-                    aboutMe = aboutMe.trim(),
-                    profession = profession.trim(),
-                    city = city.trim()
-                )
-            )
-
-            if (response.isSuccessful && response.data != null) {
-                val updated = response.data
-                _uiState.update {
-                    it.copy(
-                        currentUserProfile = updated,
-                        toastMessage = "Profile details saved to Cloud Firestore."
-                    )
+            firestoreResult.fold(
+                onSuccess = { updated ->
+                    _uiState.update {
+                        it.copy(
+                            currentUserProfile = updated,
+                            toastMessage = "Profile details saved to Cloud Firestore."
+                        )
+                    }
+                    appContext?.let { SessionManager.saveUserSession(it, updated) }
+                },
+                onFailure = { error ->
+                    showToast("Update failed: ${error.localizedMessage}")
                 }
-            } else {
-                showToast("Update failed: ${response.message}")
-            }
+            )
         }
+    }
+
+    fun logout(context: Context? = null) {
+        val ctx = context ?: appContext
+        ctx?.let { SessionManager.clearSession(it) }
+        try {
+            FirebaseAuthRepository.getAuth()?.signOut()
+        } catch (_: Exception) {}
+        _uiState.update {
+            it.copy(
+                isLoggedIn = false,
+                isPhoneVerified = false,
+                isEmailVerified = false,
+                isAgeVerified = false,
+                currentScreen = Screen.WELCOME
+            )
+        }
+        showToast("Logged out successfully.")
     }
 }
