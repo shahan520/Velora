@@ -93,29 +93,35 @@ object FirebaseAuthRepository {
 
             // 1. Authenticate / Create user in Firebase Authentication
             if (auth != null) {
-                try {
-                    val authResult = auth.createUserWithEmailAndPassword(email, pass).awaitTaskResult()
-                    firebaseUid = authResult.user?.uid
-                    logInfo("Created Firebase Auth account: $email (UID: $firebaseUid)")
-                } catch (e: Exception) {
-                    val isCollision = e is FirebaseAuthUserCollisionException ||
-                            e.message?.contains("already in use", ignoreCase = true) == true ||
-                            e.message?.contains("email_already_in_use", ignoreCase = true) == true ||
-                            e.message?.contains("already exists", ignoreCase = true) == true
+                val current = auth.currentUser
+                if (current != null && current.email.equals(email, ignoreCase = true)) {
+                    firebaseUid = current.uid
+                    logInfo("Firebase Auth user already active for: $email (UID: $firebaseUid)")
+                } else {
+                    try {
+                        val authResult = auth.createUserWithEmailAndPassword(email, pass).awaitTaskResult()
+                        firebaseUid = authResult.user?.uid
+                        logInfo("Created Firebase Auth account: $email (UID: $firebaseUid)")
+                    } catch (e: Exception) {
+                        val isCollision = e is FirebaseAuthUserCollisionException ||
+                                e.message?.contains("already in use", ignoreCase = true) == true ||
+                                e.message?.contains("email_already_in_use", ignoreCase = true) == true ||
+                                e.message?.contains("already exists", ignoreCase = true) == true
 
-                    if (isCollision) {
-                        logInfo("Account already registered in Firebase Auth: $email. Linking session...")
-                        try {
-                            val signResult = auth.signInWithEmailAndPassword(email, pass).awaitTaskResult()
-                            firebaseUid = signResult.user?.uid
-                        } catch (signErr: Exception) {
-                            logWarn("Account exists in Firebase Auth with different credentials: ${signErr.message}")
-                            return@withContext Result.failure(
-                                IllegalStateException("The email address is already in use by another account. Please log in.")
-                            )
+                        if (isCollision) {
+                            logInfo("Account already registered in Firebase Auth: $email. Linking session...")
+                            try {
+                                val signResult = auth.signInWithEmailAndPassword(email, pass).awaitTaskResult()
+                                firebaseUid = signResult.user?.uid
+                            } catch (signErr: Exception) {
+                                logWarn("Account exists in Firebase Auth with different credentials: ${signErr.message}")
+                                return@withContext Result.failure(
+                                    IllegalStateException("The email address is already in use by another account. Please log in.")
+                                )
+                            }
+                        } else {
+                            logWarn("Firebase Auth create error: ${e.message}. Proceeding with sync.")
                         }
-                    } else {
-                        logWarn("Firebase Auth create error: ${e.message}. Proceeding with sync.")
                     }
                 }
             }
@@ -201,27 +207,37 @@ object FirebaseAuthRepository {
 
             var user: FirebaseUser? = null
             if (auth != null) {
-                try {
-                    val authResult = auth.signInWithEmailAndPassword(email, pass).awaitTaskResult()
-                    user = authResult.user
-                    logInfo("Firebase Auth signIn successful: ${user?.email} (${user?.uid})")
-                } catch (e: Exception) {
-                    val isUserNotFound = e is com.google.firebase.auth.FirebaseAuthInvalidUserException ||
-                            e.message?.contains("no user record", ignoreCase = true) == true ||
-                            e.message?.contains("user-not-found", ignoreCase = true) == true ||
-                            e.message?.contains("not found", ignoreCase = true) == true
+                val current = auth.currentUser
+                if (current != null && current.email.equals(email, ignoreCase = true)) {
+                    user = current
+                    logInfo("Firebase Auth user already signed in: ${user.email} (${user.uid})")
+                } else {
+                    try {
+                        val authResult = auth.signInWithEmailAndPassword(email, pass).awaitTaskResult()
+                        user = authResult.user
+                        logInfo("Firebase Auth signIn successful: ${user?.email} (${user?.uid})")
+                    } catch (e: Exception) {
+                        val isUserNotFound = e is com.google.firebase.auth.FirebaseAuthInvalidUserException ||
+                                e.message?.contains("no user record", ignoreCase = true) == true ||
+                                e.message?.contains("user-not-found", ignoreCase = true) == true ||
+                                e.message?.contains("not found", ignoreCase = true) == true
 
-                    if (isUserNotFound) {
-                        // User truly doesn't exist in Firebase Auth yet, provision new account
-                        logInfo("Account not found in Firebase Auth during login, creating: $email")
-                        try {
-                            val createResult = auth.createUserWithEmailAndPassword(email, pass).awaitTaskResult()
-                            user = createResult.user
-                        } catch (createErr: Exception) {
-                            logWarn("Firebase Auth create on login note: ${createErr.message}")
+                        val isAlreadyInUse = e is FirebaseAuthUserCollisionException ||
+                                e.message?.contains("already in use", ignoreCase = true) == true ||
+                                e.message?.contains("email_already_in_use", ignoreCase = true) == true
+
+                        if (isUserNotFound && !isAlreadyInUse) {
+                            // User truly doesn't exist in Firebase Auth yet, provision new account
+                            logInfo("Account not found in Firebase Auth during login, creating: $email")
+                            try {
+                                val createResult = auth.createUserWithEmailAndPassword(email, pass).awaitTaskResult()
+                                user = createResult.user
+                            } catch (createErr: Exception) {
+                                logWarn("Firebase Auth create on login note: ${createErr.message}")
+                            }
+                        } else {
+                            logWarn("Firebase Auth signIn failed (omitting duplicate createUser): ${e.message}")
                         }
-                    } else {
-                        logWarn("Firebase Auth signIn failed (omitting duplicate createUser): ${e.message}")
                     }
                 }
 

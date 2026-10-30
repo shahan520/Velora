@@ -625,13 +625,10 @@ class VeloraViewModel : ViewModel() {
 
     fun quickLogin() {
         viewModelScope.launch {
-            // Synchronize with Firebase Auth & Cloud Firestore
-            FirebaseAuthRepository.registerAndSyncUser(
-                name = VeloraData.currentUser.name,
-                email = VeloraData.currentUser.email.ifBlank { "member@velora.com" },
-                phone = VeloraData.currentUser.phone.ifBlank { "01700000000" },
-                pass = "VeloraPass@123"
-            )
+            val email = VeloraData.currentUser.email.ifBlank { "member@velora.com" }
+            val pass = "VeloraPass@123"
+            // Synchronize with Firebase Auth & Cloud Firestore via sign-in
+            FirebaseAuthRepository.loginAndSyncUser(email, pass)
             _uiState.update {
                 it.copy(
                     isLoggedIn = true,
